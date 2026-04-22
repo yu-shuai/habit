@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-headline: "Manrope", sans-serif;
+
+  --color-surface: #f8f9fa;
+  --color-surface-container-low: #f3f4f5;
+  --color-surface-container-high: #e7e8e9;
+  --color-surface-container-highest: #e1e3e4;
+  
+  --radius-xl: 0.5rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+}
+
+@layer base {
+  :root {
+    --bg-main: #f8f9fa;
+    --text-main: #171717;
+    --card-bg: #ffffff;
+    --border-color: #f5f5f5;
+    --input-bg: #f3f4f6;
+  }
+
+  .dark {
+    --bg-main: #171717;
+    --text-main: #f5f5f5;
+    --card-bg: #262626;
+    --border-color: #333333;
+    --input-bg: #333333;
+  }
+
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    @apply antialiased transition-colors duration-300;
+  }
+}
+
+.bg-white {
+  background-color: var(--card-bg) !important;
+}
+
+.bg-neutral-50 {
+  background-color: var(--bg-main) !important;
+}
+
+.bg-neutral-100 {
+  background-color: var(--input-bg) !important;
+}
+
+.text-neutral-900, .text-neutral-800 {
+  color: var(--text-main) !important;
+}
+
+.border-neutral-50, .border-neutral-100 {
+  border-color: var(--border-color) !important;
+}
+
+.shadow-sm, .shadow-lg, .editorial-shadow {
+  transition: box-shadow 0.3s ease;
+}
+
+.dark .shadow-sm, .dark .shadow-lg, .dark .editorial-shadow {
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+
+.backdrop-glass {
+  @apply backdrop-blur-xl;
+  background-color: rgba(var(--bg-main), 0.7);
+}
+
+.editorial-shadow {
+  box-shadow: 0 24px 40px -4px rgba(25, 28, 29, 0.06);
+}
+
+/* Hide scrollbar for clean editorial look */
+::-webkit-scrollbar {
+  display: none;
+}
+* {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
