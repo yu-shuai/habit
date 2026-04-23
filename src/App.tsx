@@ -670,9 +670,9 @@ export default function App() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [isEditingId, setIsEditingId] = useState(false);
   const [userProfile, setUserProfile] = useState({
-    name: '自律玩家_01',
+    name: '自律玩家',
     avatar: 'https://picsum.photos/seed/me/200/200',
-    id: '88293X'
+    id: ''
   });
   const [taskName, setTaskName] = useState('');
   const [taskDays, setTaskDays] = useState(30);
@@ -719,12 +719,44 @@ export default function App() {
 
   useEffect(() => {
     if (session?.user?.id) {
+      fetchProfile();
       fetchHabits();
       fetchActivities();
     }
   }, [session]);
 
-  // Appearance Logic
+  const fetchProfile = async () => {
+    if (!session?.user?.id) return;
+    
+    // Try to fetch profile
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', session.user.id)
+      .single();
+
+    if (error && error.code === 'PGRST116') {
+      // Profile doesn't exist, create it
+      const newProfile = {
+        id: session.user.id,
+        name: session.user.email?.split('@')[0] || '自律玩家',
+        avatar: `https://picsum.photos/seed/${session.user.id}/200/200`
+      };
+      await supabase.from('profiles').insert(newProfile);
+      setUserProfile(newProfile);
+    } else if (data) {
+      setUserProfile(data);
+    }
+  };
+
+  const updateProfile = async (updates: Partial<{ name: string; avatar: string }>) => {
+    if (!session?.user?.id) return;
+    const { error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', session.user.id);
+    if (error) console.error('Error updating profile:', error.message);
+  };
   useEffect(() => {
     const root = window.document.documentElement;
     if (appearance === 'dark') {
@@ -788,7 +820,7 @@ export default function App() {
     const { data, error } = await supabase
       .from('habits')
       .select('*')
-      .or(`user_id.eq.${session.user.id},creator_id.eq.${session.user.id}`);
+      .or(`user_id.eq.${session.user.id},creator_id.eq.${session.user.id},members.cs.[{"id":"${session.user.id}"}]`);
     // Note: Filtering by members in JSONB is better done locally or with specific Postgres operators.
     // For simplicity and correctness with RLS, we fetch habits where user is creator or owner.
 
@@ -930,6 +962,7 @@ export default function App() {
       await supabase.from('activities').insert({
         id: newPost.id,
         habit_id: newPost.habitId,
+        user_id: session.user.id,
         user: newPost.user,
         images: newPost.images,
         tag: newPost.tag,
@@ -980,10 +1013,11 @@ export default function App() {
       type: newTask.type,
       status: 'normal',
       is_completed_today: false,
-      creator_id: newTask.creatorId,
+      creator_id: session.user.id,
       invite_code: newTask.inviteCode,
       members: newTask.members,
-      is_started: newTask.isStarted
+      is_started: newTask.isStarted,
+      is_archived: false
     });
   };
 
@@ -1440,7 +1474,10 @@ export default function App() {
                     type="file"
                     className="absolute inset-0 opacity-0 cursor-pointer"
                     accept="image/*"
-                    onChange={(e) => handleImageUpload(e, (url) => setUserProfile(prev => ({ ...prev, avatar: url })))}
+                    onChange={(e) => handleImageUpload(e, (url) => {
+                      setUserProfile(prev => ({ ...prev, avatar: url }));
+                      updateProfile({ avatar: url });
+                    })}
                   />
                 </div>
                 <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-black rounded-full flex items-center justify-center border-4 border-white">
@@ -1455,8 +1492,16 @@ export default function App() {
                     className="font-headline font-black text-2xl tracking-tighter italic uppercase bg-neutral-100 px-4 py-1 rounded-xl outline-none text-center"
                     value={userProfile.name}
                     onChange={(e) => setUserProfile(prev => ({ ...prev, name: e.target.value }))}
-                    onBlur={() => setIsEditingName(false)}
-                    onKeyDown={(e) => e.key === 'Enter' && setIsEditingName(false)}
+                    onBlur={() => {
+                      setIsEditingName(false);
+                      updateProfile({ name: userProfile.name });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        setIsEditingName(false);
+                        updateProfile({ name: userProfile.name });
+                      }
+                    }}
                   />
                 ) : (
                   <h2
@@ -1592,45 +1637,66 @@ export default function App() {
     }
   };
 
-  const handleLike = (id: string, scope: InteractionScope = 'public') => {
+  const handleLike = async (id: string, scope: InteractionScope = 'public') => {
+    if (!session?.user?.id) return;
+    
     setActivities(prev => prev.map(a => {
       if (a.id === id) {
-        const alreadyLiked = a.likedBy.find(l => l.userId === userProfile.id && l.scope === scope);
+        const alreadyLiked = a.likedBy.find(l => l.userId === session.user.id && l.scope === scope);
+        let newLikedBy;
         if (alreadyLiked) {
-          return { ...a, likedBy: a.likedBy.filter(l => !(l.userId === userProfile.id && l.scope === scope)) };
+          newLikedBy = a.likedBy.filter(l => !(l.userId === session.user.id && l.scope === scope));
         } else {
-          return { ...a, likedBy: [...a.likedBy, { name: userProfile.name, userId: userProfile.id, scope }] };
+          newLikedBy = [...a.likedBy, { name: userProfile.name, userId: session.user.id, scope }];
         }
+        
+        // Persist
+        supabase.from('activities').update({ liked_by: newLikedBy }).eq('id', id).then();
+        
+        return { ...a, likedBy: newLikedBy };
       }
       return a;
     }));
   };
 
-  const handleAddComment = (postId: string, text: string, scope: InteractionScope = 'public') => {
+  const handleAddComment = async (postId: string, text: string, scope: InteractionScope = 'public') => {
+    if (!session?.user?.id) return;
+    
     setActivities(prev => prev.map(a => {
       if (a.id === postId) {
+        const newComment = {
+          id: Date.now().toString(),
+          user: userProfile.name,
+          userId: session.user.id,
+          text,
+          createdAt: Date.now(),
+          scope
+        };
+        const newComments = [...a.comments, newComment];
+        
+        // Persist
+        supabase.from('activities').update({ comments: newComments }).eq('id', postId).then();
+        
         return {
           ...a,
-          comments: [...a.comments, {
-            id: Date.now().toString(),
-            user: userProfile.name,
-            userId: userProfile.id,
-            text,
-            createdAt: Date.now(),
-            scope
-          }]
+          comments: newComments
         };
       }
       return a;
     }));
   };
 
-  const handleDeleteComment = (postId: string, commentId: string) => {
+  const handleDeleteComment = async (postId: string, commentId: string) => {
     setActivities(prev => prev.map(a => {
       if (a.id === postId) {
+        const newComments = a.comments.filter(c => c.id !== commentId);
+        
+        // Persist
+        supabase.from('activities').update({ comments: newComments }).eq('id', postId).then();
+        
         return {
           ...a,
-          comments: a.comments.filter(c => c.id !== commentId)
+          comments: newComments
         };
       }
       return a;
