@@ -727,7 +727,7 @@ export default function App() {
 
   const fetchProfile = async () => {
     if (!session?.user?.id) return;
-    
+
     // Try to fetch profile
     const { data, error } = await supabase
       .from('profiles')
@@ -1639,7 +1639,7 @@ export default function App() {
 
   const handleLike = async (id: string, scope: InteractionScope = 'public') => {
     if (!session?.user?.id) return;
-    
+
     setActivities(prev => prev.map(a => {
       if (a.id === id) {
         const alreadyLiked = a.likedBy.find(l => l.userId === session.user.id && l.scope === scope);
@@ -1649,10 +1649,10 @@ export default function App() {
         } else {
           newLikedBy = [...a.likedBy, { name: userProfile.name, userId: session.user.id, scope }];
         }
-        
+
         // Persist
         supabase.from('activities').update({ liked_by: newLikedBy }).eq('id', id).then();
-        
+
         return { ...a, likedBy: newLikedBy };
       }
       return a;
@@ -1661,7 +1661,7 @@ export default function App() {
 
   const handleAddComment = async (postId: string, text: string, scope: InteractionScope = 'public') => {
     if (!session?.user?.id) return;
-    
+
     setActivities(prev => prev.map(a => {
       if (a.id === postId) {
         const newComment = {
@@ -1673,10 +1673,10 @@ export default function App() {
           scope
         };
         const newComments = [...a.comments, newComment];
-        
+
         // Persist
         supabase.from('activities').update({ comments: newComments }).eq('id', postId).then();
-        
+
         return {
           ...a,
           comments: newComments
@@ -1690,10 +1690,10 @@ export default function App() {
     setActivities(prev => prev.map(a => {
       if (a.id === postId) {
         const newComments = a.comments.filter(c => c.id !== commentId);
-        
+
         // Persist
         supabase.from('activities').update({ comments: newComments }).eq('id', postId).then();
-        
+
         return {
           ...a,
           comments: newComments
