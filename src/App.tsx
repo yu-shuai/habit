@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useMemo, ChangeEvent, ReactNode, useRef, useEffect } from 'react';
+import { useState, useMemo, ChangeEvent, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Auth from './components/Auth';
 import { supabase } from './lib/supabase';
@@ -18,629 +18,46 @@ import {
   Flame,
   Search,
   Settings,
-  ThumbsUp,
-  MessageCircle,
   Lock,
   LogOut,
-  RefreshCcw,
-  ExternalLink,
   ChevronRight,
   Camera,
-  Shield,
-  CircleDollarSign,
   Bell,
-  MessageSquare,
   Settings2,
-  Palette,
-  PlaySquare,
-  UserPlus,
   Copy,
-  Info,
-  FileText,
-  ShieldCheck,
-  HelpCircle,
   MoreHorizontal,
-  AlertTriangle,
   Trash2,
+  Clock,
+  Mail,
+  Shield,
+  Palette,
   Headphones,
   Smile,
-  Clock,
-  Mail
+  Info,
+  FileText,
+  ShieldCheck
 } from 'lucide-react';
+import SettingsItem from './components/SettingsItem';
+import DecisionOverlay from './components/DecisionOverlay';
+import HabitCard from './components/HabitCard';
+import MomentItem from './components/MomentItem';
+import { CheckInDrawer, CreateTaskModal, DeleteConfirmModal, TaskDetailsDrawer } from './components/CheckInModal';
+import {
+  SettingsPanel,
+  AccountSecurity,
+  FeedbackPanel,
+  RemindersPanel,
+  PrivacyPanel,
+  PasswordModal,
+  TimePickerModal,
+  AppearanceSheet,
+  VisibilitySheet,
+  MedalModal,
+  MoodModal
+} from './components/Settings';
 
 // --- Types ---
-import { Tab, Visibility, InteractionScope, Habit, Comment, Post } from './types';
-
-// --- Components ---
-
-const DecisionOverlay = ({
-  habit,
-  onDecision
-}: {
-  habit: Habit;
-  onDecision: (choice: 'cashout' | 'continue') => void;
-}) => {
-  const [isVoting, setIsVoting] = useState(false);
-  const [votes, setVotes] = useState<number>(0);
-  const teamSize = 6;
-
-  const handleContinue = () => {
-    if (habit.type === 'team') {
-      setIsVoting(true);
-      let count = 0;
-      const interval = setInterval(() => {
-        count++;
-        setVotes(count);
-        if (count === teamSize) {
-          clearInterval(interval);
-          setTimeout(() => onDecision('continue'), 1000);
-        }
-      }, 500);
-    } else {
-      onDecision('continue');
-    }
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center p-8 text-white select-none"
-    >
-      <AnimatePresence mode="wait">
-        {!isVoting ? (
-          <motion.div
-            key="choice"
-            initial={{ scale: 0.9, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 1.1, opacity: 0, y: -20 }}
-            className="max-w-md w-full"
-          >
-            <div className="flex flex-col items-center">
-              <motion.div
-                animate={{
-                  boxShadow: ["0 0 20px rgba(255,255,255,0.1)", "0 0 60px rgba(255,255,255,0.3)", "0 0 20px rgba(255,255,255,0.1)"],
-                  scale: [1, 1.05, 1]
-                }}
-                transition={{ repeat: Infinity, duration: 2 }}
-                className="w-24 h-24 mb-10 bg-white text-black rounded-3xl flex items-center justify-center rotate-12"
-              >
-                <Check size={48} strokeWidth={4} />
-              </motion.div>
-
-              <h2 className="text-5xl font-headline font-black mb-2 uppercase tracking-tighter leading-none italic">
-                目标升级
-              </h2>
-              <p className="text-neutral-500 font-bold tracking-[0.2em] uppercase text-[10px] mb-12">
-                挑战达成: {habit.totalDays} 天
-              </p>
-
-              <p className="text-neutral-400 font-medium mb-16 leading-relaxed text-sm">
-                获得保底勋章并结束任务，<br />
-                或者挑战下一阶目标？如果失败，你将失去当前的阶梯勋章。
-              </p>
-
-              <div className="flex flex-col gap-4 w-full px-4">
-                <button
-                  onClick={handleContinue}
-                  className="group relative overflow-hidden w-full py-6 bg-white text-black rounded-2xl font-headline font-black text-xl active:scale-95 transition-transform"
-                >
-                  <span className="relative z-10">继续挑战</span>
-                  <motion.div
-                    initial={{ x: '-100%' }}
-                    whileHover={{ x: '100%' }}
-                    transition={{ duration: 0.5 }}
-                    className="absolute inset-0 bg-neutral-200/50"
-                  />
-                </button>
-                <button
-                  onClick={() => onDecision('cashout')}
-                  className="w-full py-5 text-neutral-500 hover:text-white font-headline font-bold text-sm tracking-widest uppercase transition-colors"
-                >
-                  见好就收 (领取本阶勋章)
-                </button>
-              </div>
-            </div>
-
-            {habit.type === 'team' && (
-              <div className="mt-12 pt-8 border-t border-white/10 opacity-30 flex items-center justify-center gap-3">
-                <Users size={12} />
-                <span className="text-[10px] font-bold tracking-widest uppercase italic">需团队同步</span>
-              </div>
-            )}
-          </motion.div>
-        ) : (
-          <motion.div
-            key="voting"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col items-center w-full max-w-sm"
-          >
-            <div className="mb-16 flex flex-col items-center">
-              <h3 className="text-4xl font-headline font-black mb-3 tracking-tighter uppercase italic">
-                团队投票中
-              </h3>
-              <p className="text-neutral-500 font-bold tracking-[0.4em] uppercase text-[9px]">
-                正在同步队友意见
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-6 w-full mb-20">
-              {Array.from({ length: teamSize }).map((_, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.1 }}
-                  className="flex items-center justify-between w-full"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-8 h-8 rounded-full border border-white/20 flex items-center justify-center text-[10px] font-bold text-neutral-500">
-                      0{i + 1}
-                    </div>
-                    <span className="text-xs font-bold tracking-widest uppercase text-neutral-400">队友</span>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    {i < votes ? (
-                      <motion.div
-                        initial={{ scale: 0, rotate: -45 }}
-                        animate={{ scale: 1, rotate: 0 }}
-                        className="text-emerald-400 font-black text-[10px] tracking-widest uppercase italic"
-                      >
-                        同意
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        animate={{ opacity: [0.2, 0.4, 0.2] }}
-                        transition={{ repeat: Infinity, duration: 1 }}
-                        className="w-12 h-0.5 bg-white/10"
-                      />
-                    )}
-                    <div className={`w-6 h-6 rounded-full border-2 transition-all duration-300 flex items-center justify-center ${i < votes ? 'bg-white border-white scale-110 shadow-[0_0_15px_rgba(255,255,255,0.4)]' : 'border-white/10'}`}>
-                      {i < votes && <Check size={14} className="text-black" strokeWidth={4} />}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-
-            <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden relative">
-              <motion.div
-                animate={{ width: `${(votes / teamSize) * 100}%` }}
-                className="absolute inset-y-0 left-0 bg-white"
-              />
-            </div>
-            <p className="mt-6 text-[10px] font-black tracking-[0.5em] uppercase italic text-white/40">
-              已收集 {votes}/{teamSize} 票
-            </p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-};
-
-interface HabitCardProps {
-  habit: Habit;
-  onCheck: (id: string) => void;
-  onDelete: (id: string) => void;
-  key?: string | number;
-}
-
-const SettingsItem = ({
-  icon,
-  label,
-  subtext,
-  statusText,
-  showArrow = true,
-  showToggle = false,
-  isToggled = false,
-  onToggle,
-  isLast = false,
-  onClick,
-  isCentered = false,
-  isDanger = false
-}: {
-  icon?: ReactNode,
-  label: string,
-  subtext?: string,
-  statusText?: string,
-  showArrow?: boolean,
-  showToggle?: boolean,
-  isToggled?: boolean,
-  onToggle?: (val: boolean) => void,
-  isLast?: boolean,
-  onClick?: () => void,
-  isCentered?: boolean,
-  isDanger?: boolean,
-  key?: string | number
-}) => (
-  <button
-    onClick={onClick}
-    className={`w-full flex items-center px-6 py-5 hover:bg-neutral-50 transition-colors ${!isLast ? 'border-b border-neutral-50' : ''} ${isCentered ? 'justify-center' : 'justify-between'}`}
-  >
-    <div className={`flex items-center gap-4 ${isCentered ? 'flex-col gap-0' : ''}`}>
-      {!isCentered && icon && <div className="text-neutral-900">{icon}</div>}
-      <div className={`flex flex-col ${isCentered ? 'items-center' : 'items-start'}`}>
-        <span className={`font-sans font-bold text-[14px] tracking-tight ${isDanger ? 'text-red-500' : 'text-neutral-800'}`}>
-          {label}
-        </span>
-        {subtext && (
-          <span className="text-[10px] text-neutral-400 font-medium leading-none mt-1">
-            {subtext}
-          </span>
-        )}
-      </div>
-    </div>
-
-    {!isCentered && (
-      <div className="flex items-center gap-2">
-        {statusText && <span className="text-[12px] text-neutral-400 font-medium">{statusText}</span>}
-        {showToggle ? (
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggle?.(!isToggled);
-            }}
-            className={`w-10 h-6 rounded-full transition-colors relative ${isToggled ? 'bg-black' : 'bg-neutral-200'}`}
-          >
-            <motion.div
-              animate={{ x: isToggled ? 18 : 2 }}
-              className="absolute top-1 left-0 w-4 h-4 bg-white rounded-full shadow-sm"
-            />
-          </div>
-        ) : (
-          showArrow && <ChevronRight size={18} className="text-neutral-200" />
-        )}
-      </div>
-    )}
-  </button>
-);
-
-const HabitCard = ({
-  habit,
-  onCheck,
-  onDelete
-}: HabitCardProps) => {
-  const progressPercent = (habit.currentProgress / habit.totalDays) * 100;
-  const isTeamUnstarted = habit.type === 'team' && !habit.isStarted;
-
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      className="relative bg-white rounded-[2rem] p-6 editorial-shadow flex items-center justify-between group overflow-hidden"
-    >
-      <button
-        onClick={() => onDelete(habit.id)}
-        className="absolute top-4 right-4 text-neutral-200 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-      >
-        <X size={16} />
-      </button>
-
-      <div className="flex-1 pr-6">
-        <div className="flex items-center gap-2 mb-2">
-          <h3 className="font-headline font-bold text-lg tracking-tight text-neutral-900">
-            {habit.name}
-          </h3>
-          {habit.type === 'team' && (
-            <span className="text-[10px] font-bold bg-neutral-100 px-2 py-0.5 rounded tracking-widest uppercase text-neutral-500">
-              [团队]
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-medium text-neutral-400 tracking-wide uppercase">
-            进度 {habit.currentProgress}/{habit.totalDays}
-          </p>
-        </div>
-
-        <div className="w-full bg-neutral-50 h-1.5 rounded-full overflow-hidden">
-          <motion.div
-            initial={{ width: 0 }}
-            animate={{ width: `${progressPercent}%` }}
-            transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
-            className="bg-black h-full rounded-full"
-          />
-        </div>
-      </div>
-
-      <div className="flex-shrink-0">
-        <button
-          onClick={() => onCheck(habit.id)}
-          disabled={habit.isCompletedToday || isTeamUnstarted}
-          className={`
-            w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300
-            ${habit.isCompletedToday
-              ? 'bg-emerald-500 text-white shadow-lg'
-              : isTeamUnstarted
-                ? 'bg-neutral-50 text-neutral-100 border-2 border-neutral-100'
-                : 'bg-neutral-50 border-2 border-neutral-100 hover:border-neutral-900'
-            }
-            ${habit.status === 'punished' && !habit.isCompletedToday ? 'bg-red-50/50' : ''}
-          `}
-        >
-          {habit.isCompletedToday ? (
-            <Check size={24} strokeWidth={3} />
-          ) : habit.status === 'punished' ? (
-            <Flame size={24} className="text-red-500 fill-red-500" />
-          ) : isTeamUnstarted ? (
-            <Lock size={20} className="text-neutral-200" />
-          ) : (
-            <div className="w-3 h-3 rounded-full bg-neutral-200 group-hover:bg-neutral-900 transition-colors" />
-          )}
-        </button>
-      </div>
-    </motion.div>
-  );
-};
-
-const MomentItem = ({
-  post,
-  onDelete,
-  onEdit,
-  onLike,
-  onAddComment,
-  onDeleteComment,
-  onViewDetail,
-  currentUserProfile,
-  currentScope = 'public',
-  showScopeSelector = false,
-  allowedScopes = ['public', 'friends', 'team']
-}: {
-  post: Post;
-  onDelete?: (id: string) => void;
-  onEdit?: (post: Post) => void;
-  onLike?: (id: string, scope: InteractionScope) => void;
-  onAddComment?: (postId: string, text: string, scope: InteractionScope) => void;
-  onDeleteComment?: (postId: string, commentId: string) => void;
-  onViewDetail?: (post: Post) => void;
-  currentUserProfile?: { id: string; name: string; avatar: string };
-  currentScope?: InteractionScope;
-  showScopeSelector?: boolean;
-  allowedScopes?: InteractionScope[];
-  key?: string | number
-}) => {
-  const [commentText, setCommentText] = useState('');
-  const [isCommenting, setIsCommenting] = useState(false);
-  const [showAllComments, setShowAllComments] = useState(false);
-  const [activeViewScope, setActiveViewScope] = useState<InteractionScope>(currentScope);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-
-  // Sync activeViewScope with currentScope prop
-  useEffect(() => {
-    setActiveViewScope(currentScope);
-  }, [currentScope]);
-
-  // Use current profile info if the post belongs to the current user
-  const displayUser = useMemo(() => {
-    if (currentUserProfile && post.user.id === currentUserProfile.id) {
-      return currentUserProfile;
-    }
-    return post.user;
-  }, [post.user, currentUserProfile]);
-
-  const timeStr = useMemo(() => {
-    const date = new Date(post.createdAt);
-    return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-  }, [post.createdAt]);
-
-  // Determine if it's a team task (based on tag or habit lookup, but here we can check if it's a team post)
-  // For simplicity, we'll assume we can always see public/friends, but team only if it's a team task.
-  // We'll filter based on activeViewScope.
-
-  const filteredLikes = useMemo(() => {
-    return post.likedBy.filter(l => l.scope === activeViewScope);
-  }, [post.likedBy, activeViewScope]);
-
-  const filteredComments = useMemo(() => {
-    return post.comments.filter(c => c.scope === activeViewScope);
-  }, [post.comments, activeViewScope]);
-
-  const isLikedByMe = useMemo(() => {
-    return post.likedBy.some(l => l.userId === currentUserProfile?.id && l.scope === activeViewScope);
-  }, [post.likedBy, currentUserProfile, activeViewScope]);
-
-  const visibleComments = showAllComments ? filteredComments : filteredComments.slice(0, 10);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      onClick={() => onViewDetail?.(post)}
-      className="flex gap-4 px-6 py-6 border-b border-neutral-50 last:border-none bg-white cursor-pointer active:bg-neutral-50 transition-colors"
-    >
-      <img
-        src={displayUser.avatar}
-        className="w-11 h-11 rounded-lg object-cover flex-shrink-0"
-        referrerPolicy="no-referrer"
-      />
-      <div className="flex-1 flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <h4 className="font-bold text-[#576b95] text-sm tracking-tight">{displayUser.name}</h4>
-          {showScopeSelector && (
-            <div className="relative" onClick={(e) => e.stopPropagation()}>
-              <button
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="p-1 text-neutral-400 hover:text-neutral-900 transition-colors"
-              >
-                <MoreHorizontal size={18} />
-              </button>
-              <AnimatePresence>
-                {isMenuOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9, y: -10 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.9, y: -10 }}
-                    className="absolute right-0 top-full mt-2 w-32 bg-white rounded-xl shadow-2xl border border-neutral-100 z-50 overflow-hidden"
-                  >
-                    {allowedScopes.map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => {
-                          setActiveViewScope(s);
-                          setIsMenuOpen(false);
-                        }}
-                        className={`w-full px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-left transition-colors ${activeViewScope === s ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-50 text-neutral-400'}`}
-                      >
-                        {s === 'public' ? '广场' : s === 'friends' ? '朋友' : '团队'}
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          )}
-        </div>
-
-        {post.content && (
-          <p className="text-[15px] leading-relaxed text-neutral-900 whitespace-pre-wrap">
-            {post.content}
-          </p>
-        )}
-
-        {post.images && post.images.length > 0 && (
-          <div className={`grid gap-1 mt-1 ${post.images.length === 1 ? 'grid-cols-1' : post.images.length <= 4 ? 'grid-cols-2' : 'grid-cols-3'} max-w-sm`}>
-            {post.images.map((img, i) => (
-              <img
-                key={i}
-                src={img}
-                className={`object-cover rounded-sm ${post.images.length === 1 ? 'w-[70%] max-h-64' : 'w-full aspect-square'}`}
-                referrerPolicy="no-referrer"
-              />
-            ))}
-          </div>
-        )}
-
-        <div className="flex items-center justify-between mt-3">
-          <div className="flex items-center gap-3">
-            <span className="text-[12px] text-neutral-400">{timeStr}</span>
-            <span className="text-[10px] font-black text-neutral-300 uppercase tracking-widest">
-              {activeViewScope === 'public' ? '广场' : activeViewScope === 'friends' ? '朋友圈' : '小队'}
-            </span>
-            {onEdit && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit(post);
-                }}
-                className="text-[12px] text-[#576b95] font-medium"
-              >
-                修改
-              </button>
-            )}
-            {onDelete && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(post.id);
-                }}
-                className="text-[12px] text-[#576b95] font-medium"
-              >
-                删除
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className={`${filteredLikes.length > 0 || filteredComments.length > 0 ? 'bg-neutral-50 rounded-lg p-3' : ''} mt-2`}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => onLike?.(post.id, activeViewScope)}
-                className="flex items-center gap-1 group"
-              >
-                <ThumbsUp size={18} className={`${isLikedByMe ? 'text-blue-500 fill-blue-500' : 'text-[#333]'} transition-colors group-active:scale-125`} />
-              </button>
-              <button
-                onClick={() => setIsCommenting(!isCommenting)}
-                className="flex items-center gap-1 group"
-              >
-                <MessageCircle size={18} className="text-[#333] transition-colors group-active:scale-125" />
-              </button>
-            </div>
-          </div>
-
-          {filteredLikes.length > 0 && (
-            <div className={`flex items-start gap-2 ${filteredComments.length > 0 ? 'border-b border-neutral-100 pb-2 mb-2' : ''}`}>
-              <ThumbsUp size={12} className="text-[#576b95] mt-1 flex-shrink-0" />
-              <p className="text-[12px] text-[#576b95] font-bold leading-tight">
-                {filteredLikes.map(l => l.name).join(', ')}
-              </p>
-            </div>
-          )}
-
-          {filteredComments.length > 0 && (
-            <div className="flex flex-col gap-1">
-              {visibleComments.map(c => (
-                <div key={c.id} className="text-[13px] group relative">
-                  <span className="font-bold text-[#576b95]">{c.user}: </span>
-                  <span className="text-neutral-700">{c.text}</span>
-                  {onDeleteComment && (
-                    <button
-                      onClick={() => onDeleteComment(post.id, c.id)}
-                      className="ml-2 text-[10px] text-neutral-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      删除
-                    </button>
-                  )}
-                </div>
-              ))}
-              {filteredComments.length > 10 && !showAllComments && (
-                <button
-                  onClick={() => setShowAllComments(true)}
-                  className="text-[11px] text-[#576b95] font-medium mt-1 self-start"
-                >
-                  查看更多（共{filteredComments.length}条）
-                </button>
-              )}
-            </div>
-          )}
-
-          {isCommenting && (
-            <div className="mt-3 flex gap-2">
-              <input
-                type="text"
-                autoFocus
-                placeholder="说点什么..."
-                value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && commentText.trim()) {
-                    onAddComment?.(post.id, commentText, activeViewScope);
-                    setCommentText('');
-                    setIsCommenting(false);
-                  }
-                }}
-                className="flex-1 bg-white border border-neutral-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-[#576b95]"
-              />
-              <button
-                onClick={() => {
-                  if (commentText.trim()) {
-                    onAddComment?.(post.id, commentText, activeViewScope);
-                    setCommentText('');
-                    setIsCommenting(false);
-                  }
-                }}
-                className="bg-[#576b95] text-white px-4 py-1.5 rounded-lg text-xs font-bold"
-              >
-                发送
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </motion.div>
-  );
-};
+import { Tab, Visibility, InteractionScope, Habit, Post } from './types';
 
 // --- Main App ---
 
@@ -649,7 +66,9 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<Tab>('tasks');
   const [homeSubTab, setHomeSubTab] = useState<'discovery' | 'team'>('discovery');
+  const [tasksSubTab, setTasksSubTab] = useState<'ongoing' | 'completed'>('ongoing');
   const [tasks, setTasks] = useState<Habit[]>([]);
+  const [completedTasks, setCompletedTasks] = useState<Habit[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMoodOpen, setIsMoodOpen] = useState(false);
   const [isCheckInOpen, setIsCheckInOpen] = useState(false);
@@ -665,6 +84,7 @@ export default function App() {
   const [decisionHabit, setDecisionHabit] = useState<Habit | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -698,6 +118,10 @@ export default function App() {
   const [isTimePickerOpen, setIsTimePickerOpen] = useState(false);
   const [timePickerValue, setTimePickerValue] = useState('08:00');
   const [editingTimeIndex, setEditingTimeIndex] = useState<number | null>(null);
+  const [userCheckInDays, setUserCheckInDays] = useState(0);
+  const [selectedUserProfile, setSelectedUserProfile] = useState<any | null>(null);
+  const [friendRequests, setFriendRequests] = useState<any[]>([]);
+  const [friends, setFriends] = useState<any[]>([]);
   const bgInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -722,13 +146,14 @@ export default function App() {
       fetchProfile();
       fetchHabits();
       fetchActivities();
+      fetchFriendRequests();
+      fetchFriends();
     }
   }, [session]);
 
   const fetchProfile = async () => {
     if (!session?.user?.id) return;
 
-    // Try to fetch profile
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -736,7 +161,6 @@ export default function App() {
       .single();
 
     if (error && error.code === 'PGRST116') {
-      // Profile doesn't exist, create it
       const newProfile = {
         id: session.user.id,
         name: session.user.email?.split('@')[0] || '自律玩家',
@@ -747,6 +171,16 @@ export default function App() {
     } else if (data) {
       setUserProfile(data);
     }
+
+    const { data: logData } = await supabase
+      .from('habit_logs')
+      .select('completed_date')
+      .eq('user_id', session.user.id);
+
+    if (logData) {
+      const uniqueDays = new Set(logData.map(l => l.completed_date)).size;
+      setUserCheckInDays(uniqueDays);
+    }
   };
 
   const updateProfile = async (updates: Partial<{ name: string; avatar: string }>) => {
@@ -756,6 +190,118 @@ export default function App() {
       .update(updates)
       .eq('id', session.user.id);
     if (error) console.error('Error updating profile:', error.message);
+  };
+
+  const updateProfileId = async (newId: string) => {
+    if (!session?.user?.id) return;
+    if (!newId.trim()) {
+      showToast('ID不能为空');
+      return;
+    }
+
+    const { data: existing } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', newId)
+      .single();
+
+    if (existing && existing.id !== session.user.id) {
+      showToast('该ID已被使用');
+      setUserProfile(prev => ({ ...prev, id: session.user.id }));
+      return;
+    }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ id: newId })
+      .eq('id', session.user.id);
+
+    if (error) {
+      console.error('Error updating ID:', error.message);
+      showToast('ID修改失败');
+    } else {
+      showToast('ID修改成功');
+    }
+  };
+
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .or(`id.ilike.%${query}%,name.ilike.%${query}%`)
+      .limit(10);
+
+    if (data) {
+      setSearchResults(data.filter(p => p.id !== session?.user?.id));
+    }
+    setIsSearching(false);
+  };
+
+  const handleSendFriendRequest = async (receiverId: string) => {
+    const { error } = await supabase.from('friendships').insert({
+      requester_id: session?.user?.id,
+      receiver_id: receiverId
+    });
+
+    if (error) {
+      showToast('已发送过好友请求或已是好友');
+    } else {
+      showToast('好友请求已发送');
+    }
+  };
+
+  const handleAcceptFriendRequest = async (requestId: string) => {
+    await supabase.from('friendships').update({ status: 'accepted', updated_at: new Date().toISOString() }).eq('id', requestId);
+    setFriendRequests(prev => prev.filter(r => r.id !== requestId));
+    showToast('已同意好友请求');
+  };
+
+  const handleRejectFriendRequest = async (requestId: string) => {
+    await supabase.from('friendships').update({ status: 'rejected', updated_at: new Date().toISOString() }).eq('id', requestId);
+    setFriendRequests(prev => prev.filter(r => r.id !== requestId));
+    showToast('已拒绝好友请求');
+  };
+
+  const fetchFriendRequests = async () => {
+    if (!session?.user?.id) return;
+    const { data } = await supabase
+      .from('friendships')
+      .select('*')
+      .eq('receiver_id', session.user.id)
+      .eq('status', 'pending');
+
+    if (data) {
+      const requestsWithProfiles = await Promise.all(data.map(async r => {
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', r.requester_id).single();
+        return { ...r, requester: profile };
+      }));
+      setFriendRequests(requestsWithProfiles);
+    }
+  };
+
+  const fetchFriends = async () => {
+    if (!session?.user?.id) return;
+    const { data } = await supabase
+      .from('friendships')
+      .select('*')
+      .or(`requester_id.eq.${session.user.id},receiver_id.eq.${session.user.id}`)
+      .eq('status', 'accepted');
+
+    if (data) {
+      const friendIds = data.map(d => d.requester_id === session.user.id ? d.receiver_id : d.requester_id);
+      const uniqueFriendIds = [...new Set(friendIds)];
+      const { data: profiles } = await supabase.from('profiles').select('*').in('id', uniqueFriendIds);
+      if (profiles) {
+        setFriends(profiles);
+      }
+    }
   };
   useEffect(() => {
     const root = window.document.documentElement;
@@ -821,8 +367,6 @@ export default function App() {
       .from('habits')
       .select('*')
       .or(`user_id.eq.${session.user.id},creator_id.eq.${session.user.id},members.cs.[{"id":"${session.user.id}"}]`);
-    // Note: Filtering by members in JSONB is better done locally or with specific Postgres operators.
-    // For simplicity and correctness with RLS, we fetch habits where user is creator or owner.
 
     if (data) {
       const mappedTasks = data.map(h => ({
@@ -839,7 +383,12 @@ export default function App() {
         members: h.members || [],
         isStarted: h.is_started ?? true
       }));
-      setTasks(mappedTasks);
+
+      const active = mappedTasks.filter(t => !t.isArchived);
+      const completed = mappedTasks.filter(t => t.isArchived);
+
+      setTasks(active);
+      setCompletedTasks(completed);
     } else if (error) {
       console.error('Error fetching habits:', error.message);
     }
@@ -1084,8 +633,8 @@ export default function App() {
   };
 
   const handleStartTeam = async (teamId: string) => {
-    setTasks(prev => prev.map(t => t.id === teamId ? { ...t, isStarted: true } : t));
-    await supabase.from('habits').update({ is_started: true }).eq('id', teamId);
+    setTasks(prev => prev.map(t => t.id === teamId ? { ...t, isStarted: true, inviteCode: '' } : t));
+    await supabase.from('habits').update({ is_started: true, invite_code: null }).eq('id', teamId);
     showToast('挑战已开始！');
   };
 
@@ -1116,11 +665,20 @@ export default function App() {
           habitToProcess = t;
           const newProgress = Math.min(t.currentProgress + 1, t.totalDays);
 
-          // Persist to Supabase
           supabase.from('habits').update({
             current_progress: newProgress,
             is_completed_today: true
           }).eq('id', id).then();
+
+          supabase.from('habit_logs').insert({
+            habit_id: id,
+            user_id: session?.user?.id,
+            completed_date: new Date().toISOString().split('T')[0]
+          }).then(({ data }) => {
+            if (data) {
+              setUserCheckInDays(prev => prev + 1);
+            }
+          });
 
           return {
             ...t,
@@ -1183,8 +741,15 @@ export default function App() {
     if (!decisionHabit) return;
 
     if (choice === 'cashout') {
+      const completedHabit = { ...decisionHabit, isArchived: true };
+      setCompletedTasks(prev => [completedHabit, ...prev]);
       setTasks(prev => prev.filter(t => t.id !== decisionHabit.id));
-      alert('恭喜获得勋章！任务已成功归档。');
+      setSelectedMedal({ days: decisionHabit.totalDays, taskName: decisionHabit.name });
+
+      supabase.from('habits').update({
+        is_archived: true,
+        current_progress: decisionHabit.totalDays
+      }).eq('id', decisionHabit.id).then();
     } else {
       const nextGoalMap: Record<number, number> = { 7: 30, 30: 90, 90: 180, 180: 360, 360: 1000 };
       const nextGoal = nextGoalMap[decisionHabit.totalDays] || decisionHabit.totalDays * 2;
@@ -1194,11 +759,16 @@ export default function App() {
           return {
             ...t,
             totalDays: nextGoal,
-            isCompletedToday: false // Reset for next streak stage
+            isCompletedToday: false
           };
         }
         return t;
       }));
+
+      supabase.from('habits').update({
+        total_days: nextGoal,
+        is_completed_today: false
+      }).eq('id', decisionHabit.id).then();
     }
     setDecisionHabit(null);
   };
@@ -1210,6 +780,7 @@ export default function App() {
   const confirmDelete = async () => {
     if (confirmDeleteId) {
       setTasks(prev => prev.filter(t => t.id !== confirmDeleteId));
+      setCompletedTasks(prev => prev.filter(t => t.id !== confirmDeleteId));
       setActivities(prev => prev.filter(a => a.habitId !== confirmDeleteId));
 
       await supabase.from('habits').delete().eq('id', confirmDeleteId);
@@ -1249,6 +820,7 @@ export default function App() {
                     onLike={handleLike}
                     onAddComment={handleAddComment}
                     onDeleteComment={handleDeleteComment}
+                    onChangeVisibility={handleChangeVisibility}
                     onViewDetail={setSelectedPost}
                     currentUserProfile={userProfile}
                     currentScope="public"
@@ -1416,6 +988,7 @@ export default function App() {
                 onLike={handleLike}
                 onAddComment={handleAddComment}
                 onDeleteComment={handleDeleteComment}
+                onChangeVisibility={handleChangeVisibility}
                 onViewDetail={setSelectedPost}
                 currentUserProfile={userProfile}
                 currentScope="friends"
@@ -1437,9 +1010,24 @@ export default function App() {
       case 'tasks':
         return (
           <main className="flex-grow pt-10 pb-32 px-6">
+            <div className="flex gap-6 mb-8 overflow-x-auto no-scrollbar">
+              <button
+                onClick={() => setTasksSubTab('ongoing')}
+                className={`font-headline font-black text-xl tracking-tighter italic transition-all flex-shrink-0 ${tasksSubTab === 'ongoing' ? 'border-b-4 border-black text-black' : 'text-neutral-300'}`}
+              >
+                进行中
+              </button>
+              <button
+                onClick={() => setTasksSubTab('completed')}
+                className={`font-headline font-black text-xl tracking-tighter italic transition-all flex-shrink-0 ${tasksSubTab === 'completed' ? 'border-b-4 border-black text-black' : 'text-neutral-300'}`}
+              >
+                已完成
+              </button>
+            </div>
+
             <div className="flex flex-col gap-6">
               <AnimatePresence mode="popLayout">
-                {tasks.map(habit => (
+                {(tasksSubTab === 'ongoing' ? tasks : completedTasks).map(habit => (
                   <HabitCard
                     key={habit.id}
                     habit={habit}
@@ -1449,13 +1037,13 @@ export default function App() {
                 ))}
               </AnimatePresence>
 
-              {tasks.length === 0 && (
+              {(tasksSubTab === 'ongoing' ? tasks : completedTasks).length === 0 && (
                 <div className="py-20 text-center flex flex-col items-center gap-4">
                   <div className="w-16 h-16 bg-neutral-100 rounded-full flex items-center justify-center text-neutral-300">
                     <CheckSquare size={32} />
                   </div>
                   <p className="text-neutral-400 font-medium font-headline tracking-wide uppercase text-sm">
-                    暂无任务，开始你的自律之旅吧
+                    {tasksSubTab === 'ongoing' ? '暂无进行中任务，开始你的自律之旅吧' : '暂无已完成任务'}
                   </p>
                 </div>
               )}
@@ -1518,8 +1106,16 @@ export default function App() {
                     className="text-[10px] text-neutral-900 font-black tracking-[0.3em] uppercase bg-neutral-100 px-4 py-1 rounded-lg outline-none text-center mt-1"
                     value={userProfile.id}
                     onChange={(e) => setUserProfile(prev => ({ ...prev, id: e.target.value }))}
-                    onBlur={() => setIsEditingId(false)}
-                    onKeyDown={(e) => e.key === 'Enter' && setIsEditingId(false)}
+                    onBlur={async () => {
+                      setIsEditingId(false);
+                      await updateProfileId(userProfile.id);
+                    }}
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Enter') {
+                        setIsEditingId(false);
+                        await updateProfileId(userProfile.id);
+                      }
+                    }}
                   />
                 ) : (
                   <p
@@ -1533,7 +1129,7 @@ export default function App() {
 
               <div className="flex gap-16">
                 <div className="text-center">
-                  <p className="text-xl font-headline font-black italic">0</p>
+                  <p className="text-xl font-headline font-black italic">{friends.length}</p>
                   <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-widest">好友</p>
                 </div>
                 <div className="text-center">
@@ -1541,10 +1137,46 @@ export default function App() {
                   <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-widest">任务</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-xl font-headline font-black italic">0</p>
-                  <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-widest">天数</p>
+                  <p className="text-xl font-headline font-black italic">
+                    {userCheckInDays}
+                  </p>
+                  <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-widest">打卡天数</p>
                 </div>
               </div>
+            </div>
+
+            <div className="px-8 flex flex-col gap-6 mt-8">
+              <div className="flex items-center gap-3">
+                <Search size={18} className="text-neutral-400" />
+                <input
+                  type="text"
+                  placeholder="搜索用户ID或用户名"
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  className="flex-1 bg-neutral-100 px-4 py-3 rounded-2xl text-sm font-medium outline-none focus:ring-2 focus:ring-black/10"
+                />
+              </div>
+              {searchResults.length > 0 && (
+                <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-neutral-100">
+                  {searchResults.map(user => (
+                    <div key={user.id} className="p-4 flex items-center justify-between border-b border-neutral-50 last:border-b-0">
+                      <div className="flex items-center gap-3" onClick={() => setSelectedUserProfile(user)}>
+                        <img src={user.avatar} className="w-10 h-10 rounded-full object-cover" referrerPolicy="no-referrer" />
+                        <div>
+                          <p className="font-bold text-sm">{user.name}</p>
+                          <p className="text-[10px] text-neutral-400 uppercase tracking-widest">ID: {user.id}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleSendFriendRequest(user.id)}
+                        className="px-4 py-2 bg-black text-white text-[10px] font-black uppercase tracking-widest rounded-full active:scale-95 transition-transform"
+                      >
+                        加好友
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="px-8 flex flex-col gap-8">
@@ -1603,8 +1235,22 @@ export default function App() {
             {/* User's personal check-in history */}
             <div className="px-8 flex flex-col gap-6 mt-12 pb-12">
               <h3 className="font-headline font-black text-lg tracking-widest italic uppercase">我的任务</h3>
+              <div className="flex gap-4 overflow-x-auto no-scrollbar">
+                <button
+                  onClick={() => setTasksSubTab('ongoing')}
+                  className={`font-headline font-black text-sm tracking-tighter italic transition-all flex-shrink-0 ${tasksSubTab === 'ongoing' ? 'border-b-2 border-black text-black' : 'text-neutral-300'}`}
+                >
+                  进行中
+                </button>
+                <button
+                  onClick={() => setTasksSubTab('completed')}
+                  className={`font-headline font-black text-sm tracking-tighter italic transition-all flex-shrink-0 ${tasksSubTab === 'completed' ? 'border-b-2 border-black text-black' : 'text-neutral-300'}`}
+                >
+                  已完成
+                </button>
+              </div>
               <div className="grid grid-cols-1 gap-4">
-                {tasks.map(t => (
+                {(tasksSubTab === 'ongoing' ? tasks : completedTasks).map(t => (
                   <div
                     key={t.id}
                     onClick={() => setSelectedTaskDetails(t)}
@@ -1629,7 +1275,11 @@ export default function App() {
                     </div>
                   </div>
                 ))}
-                {tasks.length === 0 && <div className="py-16 text-center text-[10px] font-bold text-neutral-300 uppercase tracking-widest italic border-2 border-dashed border-neutral-50 rounded-[2rem]">尚无任务存档</div>}
+                {(tasksSubTab === 'ongoing' ? tasks : completedTasks).length === 0 && (
+                  <div className="py-16 text-center text-[10px] font-bold text-neutral-300 uppercase tracking-widest italic border-2 border-dashed border-neutral-50 rounded-[2rem]">
+                    {tasksSubTab === 'ongoing' ? '暂无进行中任务' : '暂无已完成任务'}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1701,6 +1351,21 @@ export default function App() {
       }
       return a;
     }));
+  };
+
+  const handleChangeVisibility = async (postId: string, visibility: Visibility) => {
+    setActivities(prev => prev.map(a => {
+      if (a.id === postId) {
+        const updated = { ...a, visibility };
+
+        // Persist
+        supabase.from('activities').update({ visibility }).eq('id', postId).then();
+
+        return updated;
+      }
+      return a;
+    }));
+    showToast('可见范围已修改');
   };
 
   const getHeaderRightIcon = () => {
@@ -1895,6 +1560,7 @@ export default function App() {
                         onLike={handleLike}
                         onAddComment={handleAddComment}
                         onDeleteComment={handleDeleteComment}
+                        onChangeVisibility={handleChangeVisibility}
                         onViewDetail={setSelectedPost}
                         currentUserProfile={userProfile}
                         currentScope="public"
@@ -2107,10 +1773,6 @@ export default function App() {
               <div className="flex-1 overflow-y-auto bg-white footer-safe">
                 {(() => {
                   const habitActivities = activities.filter(a => a.habitId === selectedTaskDetails.id);
-
-                  // If it's a team task, show all activities. 
-                  // If it's single, we might want to keep the unique day summary or show all.
-                  // Given the user wants to see "check-in content" here, let's show all.
                   const sortedActivities = [...habitActivities].sort((a, b) => b.createdAt - a.createdAt);
 
                   return sortedActivities.map(act => (
@@ -2120,6 +1782,7 @@ export default function App() {
                       onLike={handleLike}
                       onAddComment={handleAddComment}
                       onDeleteComment={handleDeleteComment}
+                      onChangeVisibility={handleChangeVisibility}
                       onViewDetail={setSelectedPost}
                       currentUserProfile={userProfile}
                       currentScope={selectedTaskDetails.type === 'team' ? 'team' : 'friends'}
@@ -3086,6 +2749,7 @@ export default function App() {
                 onLike={handleLike}
                 onAddComment={handleAddComment}
                 onDeleteComment={handleDeleteComment}
+                onChangeVisibility={handleChangeVisibility}
                 currentUserProfile={userProfile}
               />
             </div>
