@@ -1,6 +1,22 @@
 export type Tab = 'home' | 'friends' | 'tasks' | 'me';
+export type HomeSubTab = 'discovery' | 'team' | 'following';
+export type FriendSubTab = 'feed' | 'requests';
 export type Visibility = 'public' | 'friends' | 'private';
 export type InteractionScope = 'public' | 'friends' | 'team';
+
+export interface UserProfile {
+  id: string;
+  customId?: string;
+  name: string;
+  avatar: string;
+}
+
+export interface VoteEntry {
+  userId: string;
+  choice: 'continue' | 'cashout';
+  newDays?: number;
+  votedAt: number;
+}
 
 export interface Habit {
   id: string;
@@ -11,11 +27,18 @@ export interface Habit {
   status: 'normal' | 'punished';
   isCompletedToday: boolean;
   isArchived?: boolean;
-  // Team specific
+  archivedAt?: string;
+  isFailed?: boolean;
+  // Streak / penalty
+  penaltyMode?: boolean;
+  penaltyDays?: number;
+  lastCheckDate?: string; // YYYY-MM-DD
+  // Team
   creatorId?: string;
   inviteCode?: string;
-  members?: { id: string; name: string; avatar: string }[];
+  members?: { id: string; name: string; avatar: string; customId?: string; lastCheckDate?: string }[];
   isStarted?: boolean;
+  voteStatus?: VoteEntry[];
 }
 
 export interface Comment {
@@ -29,12 +52,8 @@ export interface Comment {
 
 export interface Post {
   id: string;
-  habitId: string; // Link to habit
-  user: {
-    id?: string;
-    name: string;
-    avatar: string;
-  };
+  habitId: string;
+  user: UserProfile & { id?: string };
   images: string[];
   tag: string;
   likedBy: { name: string; userId: string; scope: InteractionScope }[];
@@ -42,5 +61,12 @@ export interface Post {
   isLive?: boolean;
   visibility: Visibility;
   content?: string;
+  createdAt: number;
+}
+
+export interface Follow {
+  id: string;
+  followerId: string;
+  followingId: string;
   createdAt: number;
 }

@@ -1,34 +1,86 @@
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Check, Users } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useEffect, useRef, useState } from 'react';
+import { Flame } from 'lucide-react';
 import { Habit } from '../types';
 
-const DecisionOverlay = ({
-  habit,
-  onDecision
-}: {
+// ─── Confetti Particle ───────────────────────────────────────────────────────
+const COLORS = ['#FF6B6B','#4ECDC4','#45B7D1','#FFEAA7','#A29BFE','#FD79A8','#00B894','#FDCB6E'];
+const BLESSINGS = [
+  '🎉 太棒了！坚持就是胜利！',
+  '🏆 了不起的成就！继续前行！',
+  '✨ 成功属于坚持的人！',
+  '🌟 你做到了！今天是你的高光时刻！',
+  '💪 自律的力量，让你与众不同！',
+  '🎊 每一天的坚持，都是写给未来的礼物！',
+];
+
+interface Particle { id: number; x: number; y: number; color: string; r: number; dx: number; dy: number; }
+
+function ConfettiCanvas() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current!;
+    const ctx = canvas.getContext('2d')!;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const particles: Particle[] = Array.from({ length: 120 }, (_, i) => ({
+      id: i,
+      x: Math.random() * canvas.width,
+      y: -20 - Math.random() * 200,
+      color: COLORS[i % COLORS.length],
+      r: 4 + Math.random() * 6,
+      dx: (Math.random() - 0.5) * 4,
+      dy: 3 + Math.random() * 4,
+    }));
+
+    let raf: number;
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.fill();
+        p.x += p.dx;
+        p.y += p.dy;
+        p.dy += 0.08;
+        if (p.y > canvas.height + 20) { p.y = -20; p.x = Math.random() * canvas.width; }
+      });
+      raf = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />;
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
+interface DecisionOverlayProps {
   habit: Habit;
-  onDecision: (choice: 'cashout' | 'continue') => void;
-}) => {
-  const [isVoting, setIsVoting] = useState(false);
-  const [votes, setVotes] = useState<number>(0);
-  const teamSize = 6;
+  isTeamCreator?: boolean;
+  hasTeamVote?: boolean;
+  onDecision: (choice: 'cashout' | 'continue', customDays?: number) => void;
+}
+
+export default function DecisionOverlay({
+  habit, isTeamCreator, hasTeamVote, onDecision
+}: DecisionOverlayProps) {
+  const [phase, setPhase] = useState<'choice' | 'fireworks'>('choice');
+  const [choosing, setChoosing] = useState<'cashout' | 'continue' | null>(null);
+  const [customDays, setCustomDays] = useState(habit.totalDays + 30);
+  const blessing = BLESSINGS[Math.floor(Math.random() * BLESSINGS.length)];
+
+  const handleCashout = () => {
+    setChoosing('cashout');
+    setPhase('fireworks');
+    setTimeout(() => onDecision('cashout'), 3000);
+  };
 
   const handleContinue = () => {
-    if (habit.type === 'team') {
-      setIsVoting(true);
-      let count = 0;
-      const interval = setInterval(() => {
-        count++;
-        setVotes(count);
-        if (count === teamSize) {
-          clearInterval(interval);
-          setTimeout(() => onDecision('continue'), 1000);
-        }
-      }, 500);
-    } else {
-      onDecision('continue');
-    }
+    if (customDays <= habit.totalDays) return;
+    onDecision('continue', customDays);
   };
 
   return (
@@ -36,140 +88,113 @@ const DecisionOverlay = ({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center p-8 text-white select-none"
+      className="fixed inset-0 bg-black/70 z-[300] flex items-center justify-center p-6 backdrop-blur-sm"
     >
       <AnimatePresence mode="wait">
-        {!isVoting ? (
+        {phase === 'choice' ? (
           <motion.div
             key="choice"
-            initial={{ scale: 0.9, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 1.1, opacity: 0, y: -20 }}
-            className="max-w-md w-full"
+            initial={{ scale: 0.85, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.85, opacity: 0 }}
+            className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 flex flex-col items-center gap-6 shadow-2xl"
           >
-            <div className="flex flex-col items-center">
-              <motion.div
-                animate={{
-                  boxShadow: ["0 0 20px rgba(255,255,255,0.1)", "0 0 60px rgba(255,255,255,0.3)", "0 0 20px rgba(255,255,255,0.1)"],
-                  scale: [1, 1.05, 1]
-                }}
-                transition={{ repeat: Infinity, duration: 2 }}
-                className="w-24 h-24 mb-10 bg-white text-black rounded-3xl flex items-center justify-center rotate-12"
-              >
-                <Check size={48} strokeWidth={4} />
-              </motion.div>
+            {/* Trophy */}
+            <motion.div
+              animate={{ rotate: [-8, 8, -8] }}
+              transition={{ repeat: Infinity, duration: 1.6, ease: 'easeInOut' }}
+              className="text-6xl"
+            >
+              🏆
+            </motion.div>
 
-              <h2 className="text-5xl font-headline font-black mb-2 uppercase tracking-tighter leading-none italic">
-                目标升级
+            <div className="text-center">
+              <h2 className="font-headline font-black text-2xl italic uppercase tracking-tighter text-neutral-900">
+                挑战完成！
               </h2>
-              <p className="text-neutral-500 font-bold tracking-[0.2em] uppercase text-[10px] mb-12">
-                挑战达成: {habit.totalDays} 天
+              <p className="text-sm text-neutral-500 mt-2">
+                「{habit.name}」已完成 <span className="font-bold text-neutral-900">{habit.totalDays} 天</span>
               </p>
-
-              <p className="text-neutral-400 font-medium mb-16 leading-relaxed text-sm">
-                获得保底勋章并结束任务，<br />
-                或者挑战下一阶目标？如果失败，你将失去当前的阶梯勋章。
-              </p>
-
-              <div className="flex flex-col gap-4 w-full px-4">
-                <button
-                  onClick={handleContinue}
-                  className="group relative overflow-hidden w-full py-6 bg-white text-black rounded-2xl font-headline font-black text-xl active:scale-95 transition-transform"
-                >
-                  <span className="relative z-10">继续挑战</span>
-                  <motion.div
-                    initial={{ x: '-100%' }}
-                    whileHover={{ x: '100%' }}
-                    transition={{ duration: 0.5 }}
-                    className="absolute inset-0 bg-neutral-200/50"
-                  />
-                </button>
-                <button
-                  onClick={() => onDecision('cashout')}
-                  className="w-full py-5 text-neutral-500 hover:text-white font-headline font-bold text-sm tracking-widest uppercase transition-colors"
-                >
-                  见好就收 (领取本阶勋章)
-                </button>
-              </div>
+              {isTeamCreator && (
+                <p className="text-[10px] text-amber-600 font-bold mt-1 bg-amber-50 px-3 py-1 rounded-full">
+                  作为队长，你的决策将发起全队投票
+                </p>
+              )}
             </div>
 
-            {habit.type === 'team' && (
-              <div className="mt-12 pt-8 border-t border-white/10 opacity-30 flex items-center justify-center gap-3">
-                <Users size={12} />
-                <span className="text-[10px] font-bold tracking-widest uppercase italic">需团队同步</span>
+            {/* Option A: Cashout */}
+            <button
+              onClick={handleCashout}
+              className="w-full py-4 bg-amber-400 text-white rounded-2xl font-headline font-black text-sm uppercase tracking-widest shadow-lg active:scale-95 transition-transform"
+            >
+              🏆 见好就收，结束任务
+            </button>
+
+            {/* Option B: Continue with custom days */}
+            <div className="w-full flex flex-col gap-3">
+              <div className="flex items-center gap-3 bg-neutral-50 rounded-2xl p-4">
+                <div className="flex flex-col flex-1">
+                  <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">继续挑战天数</span>
+                  <input
+                    type="number"
+                    min={habit.totalDays + 1}
+                    value={customDays}
+                    onChange={e => setCustomDays(Number(e.target.value))}
+                    className="text-2xl font-headline font-black bg-transparent outline-none w-full"
+                  />
+                  <span className="text-[10px] text-neutral-400">当前：{habit.totalDays} 天</span>
+                </div>
+                <div className="flex gap-2">
+                  {[30, 60, 90].map(d => (
+                    <button key={d}
+                      onClick={() => setCustomDays(habit.totalDays + d)}
+                      className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wide transition-colors ${
+                        customDays === habit.totalDays + d ? 'bg-neutral-900 text-white' : 'bg-neutral-200 text-neutral-600'
+                      }`}
+                    >
+                      +{d}
+                    </button>
+                  ))}
+                </div>
               </div>
-            )}
+              <p className="text-[10px] text-red-400 font-bold text-center">
+                ⚠️ 继续挑战将失去保底勋章，失败则一无所获
+              </p>
+              <button
+                onClick={handleContinue}
+                disabled={customDays <= habit.totalDays}
+                className="w-full py-3 bg-neutral-900 text-white rounded-2xl font-headline font-black text-sm uppercase tracking-widest active:scale-95 transition-transform disabled:opacity-30"
+              >
+                继续冲刺 {customDays} 天
+              </button>
+            </div>
           </motion.div>
         ) : (
+          /* Fireworks phase */
           <motion.div
-            key="voting"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col items-center w-full max-w-sm"
+            key="fireworks"
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            className="relative w-full h-full flex items-center justify-center"
           >
-            <div className="mb-16 flex flex-col items-center">
-              <h3 className="text-4xl font-headline font-black mb-3 tracking-tighter uppercase italic">
-                团队投票中
-              </h3>
-              <p className="text-neutral-500 font-bold tracking-[0.4em] uppercase text-[9px]">
-                正在同步队友意见
+            <ConfettiCanvas />
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="relative z-10 text-center px-8"
+            >
+              <div className="text-8xl mb-6">🎊</div>
+              <h2 className="text-white font-headline font-black text-3xl italic uppercase tracking-tighter drop-shadow-lg">
+                任务归档！
+              </h2>
+              <p className="text-white/90 text-lg font-bold mt-4 leading-relaxed drop-shadow">
+                {blessing}
               </p>
-            </div>
-
-            <div className="flex flex-col gap-6 w-full mb-20">
-              {Array.from({ length: teamSize }).map((_, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.1 }}
-                  className="flex items-center justify-between w-full"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-8 h-8 rounded-full border border-white/20 flex items-center justify-center text-[10px] font-bold text-neutral-500">
-                      0{i + 1}
-                    </div>
-                    <span className="text-xs font-bold tracking-widest uppercase text-neutral-400">队友</span>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    {i < votes ? (
-                      <motion.div
-                        initial={{ scale: 0, rotate: -45 }}
-                        animate={{ scale: 1, rotate: 0 }}
-                        className="text-emerald-400 font-black text-[10px] tracking-widest uppercase italic"
-                      >
-                        同意
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        animate={{ opacity: [0.2, 0.4, 0.2] }}
-                        transition={{ repeat: Infinity, duration: 1 }}
-                        className="w-12 h-0.5 bg-white/10"
-                      />
-                    )}
-                    <div className={`w-6 h-6 rounded-full border-2 transition-all duration-300 flex items-center justify-center ${i < votes ? 'bg-white border-white scale-110 shadow-[0_0_15px_rgba(255,255,255,0.4)]' : 'border-white/10'}`}>
-                      {i < votes && <Check size={14} className="text-black" strokeWidth={4} />}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-
-            <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden relative">
-              <motion.div
-                animate={{ width: `${(votes / teamSize) * 100}%` }}
-                className="absolute inset-y-0 left-0 bg-white"
-              />
-            </div>
-            <p className="mt-6 text-[10px] font-black tracking-[0.5em] uppercase italic text-white/40">
-              已收集 {votes}/{teamSize} 票
-            </p>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
     </motion.div>
   );
-};
-
-export default DecisionOverlay;
+}

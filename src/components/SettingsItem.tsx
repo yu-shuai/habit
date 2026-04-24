@@ -1,75 +1,53 @@
-import { motion } from 'motion/react';
 import { ChevronRight } from 'lucide-react';
-import { ReactNode } from 'react';
 
-const SettingsItem = ({
-  icon,
-  label,
-  subtext,
-  statusText,
-  showArrow = true,
-  showToggle = false,
-  isToggled = false,
-  onToggle,
-  isLast = false,
-  onClick,
-  isCentered = false,
-  isDanger = false
-}: {
-  icon?: ReactNode,
-  label: string,
-  subtext?: string,
-  statusText?: string,
-  showArrow?: boolean,
-  showToggle?: boolean,
-  isToggled?: boolean,
-  onToggle?: (val: boolean) => void,
-  isLast?: boolean,
-  onClick?: () => void,
-  isCentered?: boolean,
-  isDanger?: boolean,
-  key?: string | number
-}) => (
-  <button
-    onClick={onClick}
-    className={`w-full flex items-center px-6 py-5 hover:bg-neutral-50 transition-colors ${!isLast ? 'border-b border-neutral-50' : ''} ${isCentered ? 'justify-center' : 'justify-between'}`}
-  >
-    <div className={`flex items-center gap-4 ${isCentered ? 'flex-col gap-0' : ''}`}>
-      {!isCentered && icon && <div className="text-neutral-900">{icon}</div>}
-      <div className={`flex flex-col ${isCentered ? 'items-center' : 'items-start'}`}>
-        <span className={`font-sans font-bold text-[14px] tracking-tight ${isDanger ? 'text-red-500' : 'text-neutral-800'}`}>
+interface SettingsItemProps {
+  icon: React.ReactNode;
+  label: string;
+  value?: string;
+  onClick?: () => void;
+  toggle?: boolean;
+  toggleValue?: boolean;
+  onToggle?: (value: boolean) => void;
+  danger?: boolean;
+}
+
+export default function SettingsItem({
+  icon, label, value, onClick, toggle, toggleValue, onToggle, danger,
+}: SettingsItemProps) {
+  return (
+    <button
+      onClick={() => {
+        if (toggle && onToggle) onToggle(!toggleValue);
+        else if (onClick) onClick();
+      }}
+      className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-colors ${
+        danger ? 'hover:bg-red-50 active:bg-red-100' : 'hover:bg-neutral-50 active:bg-neutral-100'
+      }`}
+    >
+      <div className={`w-10 h-10 rounded-[1.2rem] flex items-center justify-center ${
+        danger ? 'bg-red-50 text-red-500' : 'bg-neutral-50 text-neutral-900'
+      }`}>
+        {icon}
+      </div>
+      <div className="flex-1 text-left">
+        <p className={`text-sm font-bold ${danger ? 'text-red-500' : 'text-neutral-900'}`}>
           {label}
-        </span>
-        {subtext && (
-          <span className="text-[10px] text-neutral-400 font-medium leading-none mt-1">
-            {subtext}
-          </span>
+        </p>
+        {value && (
+          <p className="text-[10px] text-neutral-400 font-medium mt-0.5">{value}</p>
         )}
       </div>
-    </div>
-
-    {!isCentered && (
-      <div className="flex items-center gap-2">
-        {statusText && <span className="text-[12px] text-neutral-400 font-medium">{statusText}</span>}
-        {showToggle ? (
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggle?.(!isToggled);
-            }}
-            className={`w-10 h-6 rounded-full transition-colors relative ${isToggled ? 'bg-black' : 'bg-neutral-200'}`}
-          >
-            <motion.div
-              animate={{ x: isToggled ? 18 : 2 }}
-              className="absolute top-1 left-0 w-4 h-4 bg-white rounded-full shadow-sm"
-            />
-          </div>
-        ) : (
-          showArrow && <ChevronRight size={18} className="text-neutral-200" />
-        )}
-      </div>
-    )}
-  </button>
-);
-
-export default SettingsItem;
+      {toggle ? (
+        <div className={`w-11 h-6 rounded-full transition-colors relative ${
+          toggleValue ? 'bg-black' : 'bg-neutral-200'
+        }`}>
+          <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+            toggleValue ? 'translate-x-[22px]' : 'translate-x-0.5'
+          }`} />
+        </div>
+      ) : (
+        <ChevronRight size={16} className="text-neutral-300" />
+      )}
+    </button>
+  );
+}
