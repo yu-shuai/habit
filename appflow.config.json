@@ -1,0 +1,10 @@
+{
+  "apps": [
+    {
+      "root": "./",
+      "android": {
+        "root": "android"
+      }
+    }
+  ]
+}
