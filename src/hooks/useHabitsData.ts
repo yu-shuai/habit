@@ -45,6 +45,7 @@ export const useHabitsData = ({
         inviteCode: h.invite_code,
         members: h.members || [],
         isStarted: h.is_started ?? true,
+        captainDeleted: h.captain_deleted || false,
       }));
 
       setTasks(mapped.filter(t => !t.isArchived));
@@ -67,6 +68,7 @@ export const useHabitsData = ({
           likedBy: a.liked_by || [],
           habitId: a.habit_id,
           createdAt: new Date(a.created_at).getTime(),
+          type: a.type || undefined,
         }))
       );
     } else if (error) {

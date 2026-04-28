@@ -158,6 +158,12 @@ export default function SettingsOverlay({
                         onClick={() => setIsAppearanceSheetOpen(true)}
                       />
                       <SettingsItem
+                        icon={<Palette size={20} />}
+                        label="背景设置"
+                        value={appBackground ? '已自定义' : '默认'}
+                        onClick={() => setSettingsCategory('background')}
+                      />
+                      <SettingsItem
                         icon={<Trash2 size={20} />}
                         label="清除缓存"
                         value={cacheSize}
@@ -227,7 +233,7 @@ export default function SettingsOverlay({
                   <div className="bg-white rounded-[2rem] overflow-hidden border border-neutral-100 shadow-sm divide-y divide-neutral-50">
                     <SettingsItem icon={<FileText size={20} />} label="用户协议" />
                     <SettingsItem icon={<ShieldCheck size={20} />} label="隐私政策" />
-                    <SettingsItem icon={<Info size={20} />} label="官方网站" isLast />
+                    <SettingsItem icon={<Info size={20} />} label="官方网站" />
                   </div>
                   <p className="text-center text-[10px] font-medium text-neutral-300 px-10 leading-relaxed">
                     © 2026 Habit Studio. All rights reserved. <br />致力于让自律成为一种生活方式。

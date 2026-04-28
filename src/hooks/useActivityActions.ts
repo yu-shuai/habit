@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Post, Visibility, InteractionScope, UserProfile } from '../types';
+import { getTodayString } from '../utils/app';
 
 interface UseActivityActionsParams {
   session: any;
@@ -146,28 +147,81 @@ export const useActivityActions = ({
     const habit = tasks.find(t => t.id === checkInHabitId);
     if (!habit) return;
 
-    const postId = editingPostId || `post-${Date.now()}`;
-    const post: Post = {
-      id: postId,
-      habitId: checkInHabitId,
-      user: { id: userProfile.id, name: userProfile.name, avatar: userProfile.avatar },
-      images: checkInImages,
-      tag: habit.name,
-      likedBy: [],
-      comments: [],
-      visibility: checkInVisibility,
-      content: checkInContent || '✅ 打卡完成！',
-      createdAt: Date.now(),
-    };
+    const todayStr = getTodayString();
+    const existingAutoPostId = `auto-${checkInHabitId}-${todayStr}`;
+    const isAlreadyCheckedIn = habit.isCompletedToday;
+    const dayNumber = habit ? (isAlreadyCheckedIn ? habit.currentProgress : (habit.currentProgress + 1)) : null;
+
+    // Check if user already posted today (not editing mode)
+    if (!editingPostId) {
+      const todayPosts = activities.filter(a => {
+        const postDate = new Date(a.createdAt).toISOString().split('T')[0];
+        const isToday = postDate === todayStr;
+        const isUserPost = a.user?.id === session?.user?.id;
+        const isNotAutoPost = !a.id.startsWith('auto-');
+        return isToday && isUserPost && isNotAutoPost;
+      });
+      if (todayPosts.length > 0) {
+        showToast('今天已经发布过动态了');
+        return;
+      }
+    }
 
     if (editingPostId) {
+      const post: Post = {
+        id: editingPostId,
+        habitId: checkInHabitId,
+        user: { id: userProfile.id, name: userProfile.name, avatar: userProfile.avatar },
+        images: checkInImages,
+        tag: habit ? `${habit.name}${dayNumber ? ` · 第${dayNumber}天` : ''}` : checkInContent.substring(0, 20),
+        likedBy: activities.find(a => a.id === editingPostId)?.likedBy || [],
+        comments: activities.find(a => a.id === editingPostId)?.comments || [],
+        visibility: checkInVisibility,
+        content: checkInContent || (dayNumber ? `✅ 打卡完成！第 ${dayNumber} 天` : '✅ 打卡完成！'),
+        createdAt: activities.find(a => a.id === editingPostId)?.createdAt || Date.now(),
+      };
       setActivities(prev => prev.map(a => (a.id === editingPostId ? post : a)));
       await supabase.from('activities').update({
         content: post.content,
         images: post.images,
         visibility: post.visibility,
+        tag: post.tag,
       }).eq('id', editingPostId);
+    } else if (isAlreadyCheckedIn) {
+      const existingPost = activities.find(a => a.id === existingAutoPostId);
+      const post: Post = {
+        id: existingAutoPostId,
+        habitId: checkInHabitId,
+        user: { id: userProfile.id, name: userProfile.name, avatar: userProfile.avatar },
+        images: checkInImages,
+        tag: habit ? `${habit.name}${dayNumber ? ` · 第${dayNumber}天` : ''}` : checkInContent.substring(0, 20),
+        likedBy: existingPost?.likedBy || [],
+        comments: existingPost?.comments || [],
+        visibility: checkInVisibility,
+        content: checkInContent || (dayNumber ? `✅ 打卡完成！第 ${dayNumber} 天` : '✅ 打卡完成！'),
+        createdAt: existingPost?.createdAt || Date.now(),
+      };
+      setActivities(prev => prev.map(a => (a.id === existingAutoPostId ? post : a)));
+      await supabase.from('activities').update({
+        content: post.content,
+        images: post.images,
+        visibility: post.visibility,
+        tag: post.tag,
+      }).eq('id', existingAutoPostId);
     } else {
+      const postId = `post-${Date.now()}`;
+      const post: Post = {
+        id: postId,
+        habitId: checkInHabitId,
+        user: { id: userProfile.id, name: userProfile.name, avatar: userProfile.avatar },
+        images: checkInImages,
+        tag: habit ? `${habit.name}${dayNumber ? ` · 第${dayNumber}天` : ''}` : checkInContent.substring(0, 20),
+        likedBy: [],
+        comments: [],
+        visibility: checkInVisibility,
+        content: checkInContent || (dayNumber ? `✅ 打卡完成！第 ${dayNumber} 天` : '✅ 打卡完成！'),
+        createdAt: Date.now(),
+      };
       setActivities(prev => [post, ...prev]);
       await supabase.from('activities').insert({
         id: post.id,
@@ -181,7 +235,6 @@ export const useActivityActions = ({
         liked_by: [],
         comments: [],
       });
-      // Also trigger the check-in (with auto-post skipped since we already created the post)
       handleCheck(checkInHabitId, true);
     }
 
@@ -190,7 +243,7 @@ export const useActivityActions = ({
     setCheckInHabitId('');
     setCheckInImages([]);
     setEditingPostId(null);
-    showToast(editingPostId ? '已更新' : '打卡成功！');
+    showToast(editingPostId ? '已更新' : isAlreadyCheckedIn ? '打卡内容已更新！' : '打卡成功！');
   }, [
     session, userProfile, tasks, activities,
     checkInHabitId, checkInContent, checkInImages, checkInVisibility, editingPostId,

@@ -106,7 +106,9 @@ export const useReminderEffect = ({
   useEffect(() => {
     if (!dailyReminder) return;
 
-    if (Notification.permission === 'default') {
+    const hasNotificationAPI = typeof window !== 'undefined' && 'Notification' in window;
+
+    if (hasNotificationAPI && Notification.permission === 'default') {
       Notification.requestPermission();
     }
 
@@ -116,7 +118,7 @@ export const useReminderEffect = ({
 
       if (!reminderTimes.includes(currentTime)) return;
 
-      if (Notification.permission === 'granted') {
+      if (hasNotificationAPI && Notification.permission === 'granted') {
         new Notification('HABIT 提醒', {
           body: '该打卡啦！自律的一天从现在开始任务。',
           icon: '/favicon.ico',

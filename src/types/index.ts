@@ -39,6 +39,7 @@ export interface Habit {
   members?: { id: string; name: string; avatar: string; customId?: string; lastCheckDate?: string }[];
   isStarted?: boolean;
   voteStatus?: VoteEntry[];
+  captainDeleted?: boolean;
 }
 
 export interface Comment {
@@ -62,6 +63,7 @@ export interface Post {
   visibility: Visibility;
   content?: string;
   createdAt: number;
+  type?: string;
 }
 
 export interface Follow {

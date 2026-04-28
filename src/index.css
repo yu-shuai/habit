@@ -18,17 +18,21 @@
   :root {
     --bg-main: #f8f9fa;
     --text-main: #171717;
+    --text-secondary: #737373;
     --card-bg: #ffffff;
     --border-color: #f5f5f5;
     --input-bg: #f3f4f6;
+    --hover-bg: #f5f5f5;
   }
 
   .dark {
-    --bg-main: #171717;
+    --bg-main: #0a0a0a;
     --text-main: #f5f5f5;
-    --card-bg: #262626;
-    --border-color: #333333;
-    --input-bg: #333333;
+    --text-secondary: #a3a3a3;
+    --card-bg: #1a1a1a;
+    --border-color: #2a2a2a;
+    --input-bg: #262626;
+    --hover-bg: #262626;
   }
 
   body {
@@ -50,12 +54,87 @@
   background-color: var(--input-bg) !important;
 }
 
-.text-neutral-900, .text-neutral-800 {
+.text-neutral-900, .text-neutral-800, .text-neutral-700 {
   color: var(--text-main) !important;
+}
+
+.text-neutral-400, .text-neutral-500, .text-neutral-600 {
+  color: var(--text-secondary) !important;
 }
 
 .border-neutral-50, .border-neutral-100 {
   border-color: var(--border-color) !important;
+}
+
+.dark .bg-neutral-200 {
+  background-color: #2a2a2a !important;
+}
+
+.dark .bg-neutral-300 {
+  background-color: #333333 !important;
+}
+
+.dark .bg-neutral-700 {
+  background-color: #1a1a1a !important;
+}
+
+.dark .bg-neutral-800 {
+  background-color: #141414 !important;
+}
+
+.dark .bg-neutral-900 {
+  background-color: #0a0a0a !important;
+}
+
+.dark .border-neutral-200,
+.dark .border-neutral-300 {
+  border-color: #333333 !important;
+}
+
+.dark .text-neutral-300 {
+  color: #737373 !important;
+}
+
+.dark .text-neutral-500 {
+  color: #a3a3a3 !important;
+}
+
+.dark .bg-gradient-to-r.from-amber-50.to-yellow-50 {
+  background: linear-gradient(to right, #2a2010, #2a2510) !important;
+}
+
+.dark .border-amber-100 {
+  border-color: #3a3015 !important;
+}
+
+.dark .bg-amber-100 {
+  background-color: #2a2010 !important;
+}
+
+.dark .text-amber-500,
+.dark .text-amber-600 {
+  color: #fbbf24 !important;
+}
+
+.dark .bg-amber-50 {
+  background-color: #2a2010 !important;
+}
+
+.dark .bg-emerald-100 {
+  background-color: #0a2a1a !important;
+}
+
+.dark .text-emerald-500,
+.dark .text-emerald-600 {
+  color: #34d399 !important;
+}
+
+.dark .bg-emerald-50 {
+  background-color: #0a2a1a !important;
+}
+
+.dark .bg-red-50 {
+  background-color: #2a1010 !important;
 }
 
 .shadow-sm, .shadow-lg, .editorial-shadow {
@@ -75,7 +154,6 @@
   box-shadow: 0 24px 40px -4px rgba(25, 28, 29, 0.06);
 }
 
-/* Hide scrollbar for clean editorial look */
 ::-webkit-scrollbar {
   display: none;
 }

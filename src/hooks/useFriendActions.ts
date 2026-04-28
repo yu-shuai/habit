@@ -6,7 +6,7 @@ interface UseFriendActionsParams {
   session: any;
   userProfile: UserProfile;
   setFriendRequests: (updater: (prev: any[]) => any[]) => void;
-  setFriends: (friends: any[]) => void;
+  setFriends: (updater: any[] | ((prev: any[]) => any[])) => void;
   setSearchResults: (results: any[]) => void;
   setSearchQuery: (query: string) => void;
   setIsSearching: (searching: boolean) => void;
@@ -158,6 +158,23 @@ export const useFriendActions = ({
     [setFriendRequests, showToast]
   );
 
+  const handleDeleteFriend = useCallback(
+    async (friendId: string) => {
+      if (!session?.user?.id) return;
+      const { error } = await supabase
+        .from('friendships')
+        .delete()
+        .or(`and(requester_id.eq.${session.user.id},receiver_id.eq.${friendId}),and(requester_id.eq.${friendId},receiver_id.eq.${session.user.id})`);
+      if (error) {
+        showToast('删除好友失败');
+      } else {
+        setFriends((prev: any[]) => prev.filter((f: any) => f.id !== friendId));
+        showToast('已删除好友');
+      }
+    },
+    [session, setFriends, showToast]
+  );
+
   return {
     fetchFriendRequests,
     fetchFriends,
@@ -165,5 +182,6 @@ export const useFriendActions = ({
     handleSendFriendRequest,
     handleAcceptFriendRequest,
     handleRejectFriendRequest,
+    handleDeleteFriend,
   };
 };

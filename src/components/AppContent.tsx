@@ -33,6 +33,10 @@ interface AppContentProps {
   // Habit
   handleCheck: (id: string, skipAutoPost?: boolean) => void;
   handleDelete: (id: string) => void;
+  handleTeamVote?: (habitId: string, choice: 'continue' | 'cashout', newDays?: number) => void;
+  currentUserId?: string;
+  onDeleteFriend?: (friendId: string) => void;
+  onClaimReward?: (habit: Habit) => void;
   // Activity
   handleLike: (id: string, scope?: InteractionScope) => void;
   handleAddComment: (postId: string, text: string, scope?: InteractionScope) => void;
@@ -69,7 +73,7 @@ export default function AppContent(props: AppContentProps) {
     tasks, completedTasks, activities, friends,
     joinCode, setJoinCode,
     handleJoinTeam, handleStartTeam, handleKickMember,
-    handleCheck, handleDelete,
+    handleCheck, handleDelete, handleTeamVote, currentUserId, onDeleteFriend, onClaimReward,
     handleLike, handleAddComment, handleDeleteComment, handleChangeVisibility,
     setSelectedPost, setSelectedTaskDetails,
     userProfile, showToast,
@@ -96,6 +100,7 @@ export default function AppContent(props: AppContentProps) {
           handleLike={handleLike} handleAddComment={handleAddComment}
           handleDeleteComment={handleDeleteComment} handleChangeVisibility={handleChangeVisibility}
           setSelectedPost={setSelectedPost} showToast={showToast}
+          handleTeamVote={handleTeamVote}
         />
       );
     case 'friends':
@@ -115,16 +120,16 @@ export default function AppContent(props: AppContentProps) {
     case 'tasks':
       return (
         <TasksTab
-          tasksSubTab={tasksSubTab} setTasksSubTab={setTasksSubTab}
-          tasks={tasks} completedTasks={completedTasks}
-          handleCheck={handleCheck} handleDelete={handleDelete}
-        />
+            tasks={tasks}
+            handleCheck={handleCheck} handleDelete={handleDelete} handleTeamVote={handleTeamVote} currentUserId={currentUserId}
+          />
       );
     case 'me':
       return (
         <MeTab
           userProfile={userProfile}
           tasks={tasks} completedTasks={completedTasks}
+          activities={activities}
           friends={friends} userCheckInDays={userCheckInDays}
           isEditingName={isEditingName} setIsEditingName={setIsEditingName}
           isEditingId={isEditingId} setIsEditingId={setIsEditingId}
@@ -136,6 +141,9 @@ export default function AppContent(props: AppContentProps) {
           setSelectedTaskDetails={setSelectedTaskDetails}
           onViewProfile={onViewProfile}
           showToast={showToast}
+          handleDelete={handleDelete}
+          onDeleteFriend={onDeleteFriend}
+          onClaimReward={onClaimReward}
           followers={followers}
           totalLikes={totalLikes}
         />

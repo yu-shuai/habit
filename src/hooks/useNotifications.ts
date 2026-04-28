@@ -1,29 +1,24 @@
 import { useEffect } from 'react';
 import { Habit } from '../types';
 
-/**
- * 每日提醒逻辑：
- * - 20:00 若有未打卡任务 → 个人提醒
- * - 21:00 若团队有人未打卡 → 团队警报
- */
+const hasNotificationAPI = typeof window !== 'undefined' && 'Notification' in window;
+
 export const useNotifications = (tasks: Habit[], reminderTimes: string[]) => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // 注册 Service Worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(console.warn);
     }
 
-    // 请求通知权限
-    if ('Notification' in window && Notification.permission === 'default') {
+    if (hasNotificationAPI && Notification.permission === 'default') {
       Notification.requestPermission();
     }
   }, []);
 
   useEffect(() => {
     if (!tasks.length) return;
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    if (!hasNotificationAPI || Notification.permission !== 'granted') return;
 
     const timers: ReturnType<typeof setTimeout>[] = [];
 

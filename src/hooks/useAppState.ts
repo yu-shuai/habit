@@ -20,6 +20,8 @@ export const useAppState = () => {
   const [activities, setActivities] = useState<Post[]>([]);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmDeleteMeta, setConfirmDeleteMeta] = useState<{ id: string; name: string; isArchived: boolean } | null>(null);
+  const [confirmFriendDelete, setConfirmFriendDelete] = useState<{ id: string; name: string } | null>(null);
   const [selectedTaskDetails, setSelectedTaskDetails] = useState<Habit | null>(null);
   const [currentMood, setCurrentMood] = useState('😆');
   const [decisionHabit, setDecisionHabit] = useState<Habit | null>(null);
@@ -82,6 +84,8 @@ export const useAppState = () => {
     activities, setActivities,
     editingPostId, setEditingPostId,
     confirmDeleteId, setConfirmDeleteId,
+    confirmDeleteMeta, setConfirmDeleteMeta,
+    confirmFriendDelete, setConfirmFriendDelete,
     selectedTaskDetails, setSelectedTaskDetails,
     currentMood, setCurrentMood,
     decisionHabit, setDecisionHabit,

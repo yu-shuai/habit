@@ -5,9 +5,10 @@ interface FriendRequestListProps {
   requests: any[];
   onAccept: (requestId: string) => void;
   onReject: (requestId: string) => void;
+  onViewProfile?: (userId: string) => void;
 }
 
-export default function FriendRequestList({ requests, onAccept, onReject }: FriendRequestListProps) {
+export default function FriendRequestList({ requests, onAccept, onReject, onViewProfile }: FriendRequestListProps) {
   return (
     <div className="flex flex-col pb-32">
       {requests.length === 0 ? (

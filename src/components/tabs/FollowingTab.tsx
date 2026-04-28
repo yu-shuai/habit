@@ -16,9 +16,9 @@ export default function FollowingTab({
   activities, followings, userProfile,
   onLike, onAddComment, onDeleteComment, onChangeVisibility, setSelectedPost,
 }: FollowingTabProps) {
-  // Only public posts from followed users
+  // Public and friends posts from followed users
   const followingPosts = activities
-    .filter(a => followings.includes(a.user.id ?? '') && a.visibility === 'public')
+    .filter(a => followings.includes(a.user.id ?? '') && (a.visibility === 'public' || a.visibility === 'friends'))
     .sort((a, b) => b.createdAt - a.createdAt);
 
   return (

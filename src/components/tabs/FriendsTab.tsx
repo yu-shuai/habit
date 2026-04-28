@@ -31,9 +31,10 @@ export default function FriendsTab({
   hasNewFriendPosts,
 }: FriendsTabProps) {
   const friendIds = new Set(friends.map((f: any) => f.id));
+  const currentUserId = userProfile.id;
 
   const friendPosts = activities.filter(
-    a => (a.visibility === 'public' || a.visibility === 'friends') && friendIds.has(a.user?.id)
+    a => (a.visibility === 'friends' || a.visibility === 'public') && (friendIds.has(a.user?.id) || a.user?.id === currentUserId)
   );
 
   const tabs: { id: FriendSubTab; label: string }[] = [

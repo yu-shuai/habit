@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronRight, UserCheck, UserPlus } from 'lucide-react';
+import { ChevronRight, UserCheck, UserPlus, Users, Heart, Eye } from 'lucide-react';
 import { Post, UserProfile, Visibility, InteractionScope } from '../types';
 import MomentItem from './MomentItem';
+import { supabase } from '../lib/supabase';
 
 interface UserProfilePageProps {
   profile: UserProfile | null;
@@ -35,14 +36,33 @@ export default function UserProfilePage({
   currentUserProfile,
   onSendFriendRequest,
 }: UserProfilePageProps) {
+  const [isAddingFriend, setIsAddingFriend] = useState(false);
+  const [friendMessage, setFriendMessage] = useState('');
+  const [profileStats, setProfileStats] = useState({ friends: 0, followers: 0, likes: 0 });
+
+  useEffect(() => {
+    if (!profile?.id || !isOpen) return;
+    const fetchStats = async () => {
+      const [friendsRes, followersRes, likesRes] = await Promise.all([
+        supabase.from('friendships').select('id', { count: 'exact' }).eq('status', 'accepted').or(`requester_id.eq.${profile.id},receiver_id.eq.${profile.id}`),
+        supabase.from('follows').select('id', { count: 'exact' }).eq('following_id', profile.id),
+        supabase.from('activities').select('liked_by').eq('user_id', profile.id),
+      ]);
+      const totalLikes = (likesRes.data || []).reduce((sum: number, a: any) => sum + (a.liked_by?.length || 0), 0);
+      setProfileStats({
+        friends: friendsRes.count || 0,
+        followers: followersRes.count || 0,
+        likes: totalLikes,
+      });
+    };
+    fetchStats();
+  }, [profile?.id, isOpen]);
+
   if (!profile) return null;
 
   const userPosts = activities.filter(
     a => a.user.id === profile.id && a.visibility === 'public'
   );
-
-  const [isAddingFriend, setIsAddingFriend] = useState(false);
-  const [friendMessage, setFriendMessage] = useState('');
 
   return (
     <AnimatePresence>
@@ -54,7 +74,6 @@ export default function UserProfilePage({
           transition={{ type: 'spring', damping: 25, stiffness: 200 }}
           className="fixed inset-0 max-w-lg mx-auto bg-white z-[350] flex flex-col overflow-hidden"
         >
-          {/* Header */}
           <div className="flex items-center justify-between px-5 pt-12 pb-4 border-b border-neutral-100">
             <button onClick={onClose} className="p-2 -ml-2">
               <ChevronRight className="rotate-180" size={24} />
@@ -63,9 +82,7 @@ export default function UserProfilePage({
             <div className="w-10" />
           </div>
 
-          {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto pb-20">
-            {/* Profile section */}
             <div className="flex flex-col items-center pt-10 pb-8 px-6 gap-5">
               <div className="relative">
                 <img
@@ -83,13 +100,19 @@ export default function UserProfilePage({
                 </p>
               </div>
 
-              {/* Public post count */}
-              <div className="text-center">
-                <p className="text-xl font-headline font-black">{userPosts.length}</p>
-                <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-widest">公开动态</p>
+              <div className="flex gap-10">
+                {[
+                  { label: '好友', value: profileStats.friends, icon: Users },
+                  { label: '关注者', value: profileStats.followers, icon: Eye },
+                  { label: '获赞', value: profileStats.likes, icon: Heart },
+                ].map(s => (
+                  <div key={s.label} className="text-center min-w-[60px]">
+                    <p className="text-xl font-headline font-black italic leading-none">{s.value}</p>
+                    <p className="text-[9px] text-neutral-400 font-bold uppercase tracking-widest mt-1.5">{s.label}</p>
+                  </div>
+                ))}
               </div>
 
-              {/* Action buttons */}
               {profile.id !== currentUserProfile.id && (
                 <div className="w-full mt-2">
                   <AnimatePresence mode="wait">
@@ -167,7 +190,6 @@ export default function UserProfilePage({
               )}
             </div>
 
-            {/* Posts */}
             <div className="border-t border-neutral-100">
               <p className="px-5 py-3 text-[10px] font-black uppercase tracking-widest text-neutral-400">
                 公开动态

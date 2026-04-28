@@ -1,13 +1,82 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { Camera, Flame, Lock, CheckSquare, Users, Clock, Calendar, ChevronLeft, Copy } from 'lucide-react';
-import { ChangeEvent, useState } from 'react';
-import { Habit, UserProfile } from '../../types';
-import { copyToClipboard } from '../../utils/app';
+import { Camera, Flame, Lock, CheckSquare, Users, Clock, Calendar, ChevronLeft, X, Award, UserMinus, Notebook, Crown } from 'lucide-react';
+import { ChangeEvent, useCallback, useMemo, useState } from 'react';
+import { Habit, Post, UserProfile } from '../../types';
+
+// Completed task card with delete button (same pattern as HabitCard)
+function CompletedTaskCard({
+  task,
+  claimed,
+  completedDate,
+  handleDelete,
+  setSelectedTaskDetails,
+}: {
+  task: Habit;
+  claimed: boolean;
+  completedDate: string;
+  handleDelete?: (id: string) => void;
+  setSelectedTaskDetails: (task: Habit) => void;
+}) {
+  const [showDelete, setShowDelete] = useState(false);
+
+  return (
+    <div
+      onClick={() => setSelectedTaskDetails(task)}
+      onContextMenu={(e) => { e.preventDefault(); setShowDelete(v => !v); }}
+      className="p-5 rounded-[1.5rem] flex items-center gap-4 border border-emerald-100 bg-gradient-to-r from-emerald-50/50 to-white cursor-pointer active:scale-[0.98] transition-transform relative shadow-sm hover:shadow-md hover:border-emerald-200 select-none"
+    >
+      <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+        claimed ? 'bg-emerald-100' : 'bg-emerald-50'
+      }`}>
+        <Notebook size={18} className={claimed ? 'text-emerald-600' : 'text-emerald-500'} strokeWidth={2} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="font-bold text-sm text-emerald-900 truncate">{task.name}</p>
+          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider ${
+            task.type === 'team' ? 'text-emerald-600 bg-emerald-100' : 'text-blue-600 bg-blue-50'
+          }`}>
+            {task.type === 'team' ? '团队' : '个人'}
+          </span>
+        </div>
+        <div className="flex items-center gap-3 mt-0.5">
+          <span className="flex items-center gap-1 text-[11px] text-emerald-600/70"><Clock size={10} />{task.totalDays}天</span>
+          <span className="flex items-center gap-1 text-[11px] text-emerald-600/70"><Calendar size={10} />{completedDate}</span>
+        </div>
+      </div>
+      <span
+        className={`text-[9px] font-black px-2.5 py-1.5 rounded-full uppercase tracking-wide ${
+          claimed ? 'text-emerald-700 bg-emerald-100' : 'text-emerald-600 bg-emerald-50 border border-emerald-200'
+        }`}
+      >
+        {claimed ? '已领取' : '已完成'}
+      </span>
+      <AnimatePresence>
+        {showDelete && handleDelete && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.5 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDelete(task.id);
+              setShowDelete(false);
+            }}
+            className="absolute top-2.5 right-2.5 w-6 h-6 flex items-center justify-center z-20 transition-opacity hover:opacity-70 active:scale-90"
+          >
+            <X size={16} className="text-red-500" strokeWidth={3} />
+          </motion.button>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 interface MeTabProps {
   userProfile: UserProfile;
   tasks: Habit[];
   completedTasks: Habit[];
+  activities?: Post[];
   friends: any[];
   userCheckInDays: number;
   isEditingName: boolean;
@@ -24,6 +93,9 @@ interface MeTabProps {
   setSelectedTaskDetails: (task: Habit | null) => void;
   onViewProfile: (userId: string) => void;
   showToast: (message: string) => void;
+  handleDelete?: (id: string) => void;
+  onDeleteFriend?: (friendId: string) => void;
+  onClaimReward?: (habit: Habit) => void;
   followers: any[];
   totalLikes: number;
 }
@@ -37,23 +109,48 @@ const badgeIconForDays = (days: number) => {
   return 'emoji_events';
 };
 
+const completedIconForDays = (days: number) => {
+  if (days <= 7) return '🔥';
+  if (days <= 30) return '⚡';
+  if (days <= 90) return '🌟';
+  if (days <= 180) return '💎';
+  if (days <= 365) return '🏆';
+  return '👑';
+};
+
 export default function MeTab({
   userProfile, tasks, completedTasks, friends, userCheckInDays,
+  activities,
   isEditingName, setIsEditingName,
   isEditingId, setIsEditingId,
   tasksSubTab, setTasksSubTab,
   handleImageUpload, setUserProfile, updateProfile, updateProfileId,
   setSelectedMedal, setSelectedTaskDetails, onViewProfile,
-  showToast,
+  showToast, handleDelete, onDeleteFriend,
+  onClaimReward,
   followers, totalLikes,
 }: MeTabProps) {
   const currentList = tasksSubTab === 'ongoing' ? tasks : completedTasks;
   const [isFriendsListOpen, setIsFriendsListOpen] = useState(false);
   const [isFollowersListOpen, setIsFollowersListOpen] = useState(false);
 
+  const earnedMedals = useMemo(() => {
+    const medalActs = (activities || []).filter(a => a.type === 'medal' && (a.user?.id === userProfile.id || (a as any).user_id === userProfile.id));
+    return medalActs
+      .map(a => {
+        const m = /^medal:(\d+)/.exec(a.tag || '');
+        const days = m ? Number(m[1]) : null;
+        return days ? { days, taskName: (a.content || '').split('·').pop()?.trim().replace(/^「|」$/g, '') || '任务', habitId: a.habitId, createdAt: a.createdAt } : null;
+      })
+      .filter(Boolean) as { days: number; taskName: string; habitId: string; createdAt: number }[];
+  }, [activities, userProfile.id]);
+
+  const hasClaimedReward = useCallback((habitId: string) => {
+    return earnedMedals.some(m => m.habitId === habitId);
+  }, [earnedMedals]);
+
   return (
     <div className="flex flex-col pb-32">
-      {/* Avatar + profile */}
       <div className="flex flex-col items-center gap-6 py-10 px-6">
         <div className="relative p-2 rounded-[3rem] border-2 border-neutral-100 group cursor-pointer">
           <img src={userProfile.avatar} className="w-24 h-24 rounded-[2.5rem] object-cover" referrerPolicy="no-referrer" />
@@ -69,7 +166,6 @@ export default function MeTab({
           </div>
         </div>
 
-        {/* Name */}
         <div className="text-center flex flex-col items-center gap-1">
           {isEditingName ? (
             <input autoFocus
@@ -86,7 +182,6 @@ export default function MeTab({
             </h2>
           )}
 
-          {/* customId display & edit */}
           {isEditingId ? (
             <input autoFocus
               className="text-[10px] font-black tracking-[0.3em] uppercase bg-neutral-100 px-4 py-1 rounded-lg outline-none text-center mt-1"
@@ -96,18 +191,12 @@ export default function MeTab({
               onKeyDown={async e => { if (e.key === 'Enter') { setIsEditingId(false); await updateProfileId(userProfile.customId ?? ''); } }}
             />
           ) : (
-            <div className="flex items-center gap-2 group/id cursor-pointer" onClick={async () => {
-              if (userProfile.customId || userProfile.id) {
-                const success = await copyToClipboard(userProfile.customId || userProfile.id);
-                if (success) showToast('ID 已复制');
-              }
-            }}>
-              <p className="text-[10px] text-neutral-400 font-black tracking-[0.3em] uppercase group-hover/id:text-neutral-600 transition-colors">
+            <div className="flex items-center gap-2 group/id">
+              <p className="text-[10px] text-neutral-400 font-black tracking-[0.3em] uppercase">
                 ID: {userProfile.customId || userProfile.id.substring(0, 8)}
               </p>
-              <Copy size={10} className="text-neutral-300 group-hover/id:text-neutral-500 transition-colors" />
               <button 
-                onClick={(e) => { e.stopPropagation(); setIsEditingId(true); }}
+                onClick={() => setIsEditingId(true)}
                 className="text-[10px] text-blue-500 font-bold ml-1 opacity-0 group-hover/id:opacity-100 transition-opacity"
               >
                 修改
@@ -140,15 +229,15 @@ export default function MeTab({
         </div>
         <div className="grid grid-cols-3 gap-3">
           {[7, 30, 90, 180, 365, 500].map((days, idx) => {
-            const earnedTasks = completedTasks.filter(t => t.totalDays >= days);
-            const count = earnedTasks.length;
+            const earned = earnedMedals.filter(m => m.days === days).sort((a, b) => b.createdAt - a.createdAt);
+            const count = earned.length;
             const isUnlocked = count > 0;
-            const latestTask = earnedTasks[0];
+            const latest = earned[0];
             return (
               <motion.div
                 key={idx}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => isUnlocked && latestTask && setSelectedMedal({ days, taskName: latestTask.name })}
+                onClick={() => isUnlocked && latest && setSelectedMedal({ days, taskName: latest.taskName })}
                 className="aspect-square bg-white rounded-2xl flex flex-col items-center justify-center gap-2 shadow-sm border border-neutral-100 relative"
               >
                 <div className={`w-14 h-14 rounded-full bg-neutral-50 flex items-center justify-center shadow-inner ${!isUnlocked ? 'grayscale opacity-40' : ''}`}>
@@ -173,7 +262,6 @@ export default function MeTab({
         </div>
       </div>
 
-      {/* My tasks */}
       <div className="px-6 flex flex-col gap-5 mt-10 pb-12">
         <h3 className="font-headline font-black text-lg tracking-widest italic uppercase">我的任务</h3>
         <div className="flex gap-5">
@@ -188,28 +276,21 @@ export default function MeTab({
         <div className="grid grid-cols-1 gap-3">
           {currentList.map(t => {
             if (tasksSubTab === 'completed') {
-              // Completed card style
               const completedDate = t.archivedAt
                 ? new Date(t.archivedAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
                 : '已完成';
+              const claimed = hasClaimedReward(t.id);
               return (
-                <div key={t.id} onClick={() => setSelectedTaskDetails(t)}
-                  className="p-5 bg-neutral-50 rounded-[1.5rem] flex items-center gap-4 border border-neutral-100 cursor-pointer active:scale-[0.98] transition-transform">
-                  <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                    <CheckSquare size={18} className="text-emerald-500" strokeWidth={2.5} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-sm text-neutral-700 truncate">{t.name}</p>
-                    <div className="flex items-center gap-3 mt-0.5">
-                      <span className="flex items-center gap-1 text-[11px] text-neutral-400"><Clock size={10} />{t.totalDays}天</span>
-                      <span className="flex items-center gap-1 text-[11px] text-neutral-400"><Calendar size={10} />{completedDate}</span>
-                    </div>
-                  </div>
-                  <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full uppercase tracking-wide">完成</span>
-                </div>
+                <CompletedTaskCard
+                  key={t.id}
+                  task={t}
+                  claimed={claimed}
+                  completedDate={completedDate}
+                  handleDelete={handleDelete}
+                  setSelectedTaskDetails={setSelectedTaskDetails}
+                />
               );
             }
-            // Ongoing card style
             return (
               <div key={t.id} onClick={() => setSelectedTaskDetails(t)}
                 className={`p-5 rounded-[1.5rem] text-white relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform ${t.type === 'team' ? 'bg-neutral-800' : 'bg-neutral-900'}`}>
@@ -217,9 +298,14 @@ export default function MeTab({
                   <div className="flex justify-between items-start">
                     <div className="flex items-center gap-2 flex-wrap">
                       {t.type === 'team' && (
-                        <span className="text-[9px] font-black text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full uppercase tracking-wider">团队</span>
+                        <span className="text-[9px] font-black text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
+                          <Users size={9} /> 团队
+                          {t.creatorId === userProfile.id && <Crown size={9} className="text-amber-400" />}
+                        </span>
                       )}
-                      <span className="text-[9px] font-black text-white/40 uppercase tracking-widest">个人 任务</span>
+                      {t.type !== 'team' && (
+                        <span className="text-[9px] font-black text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded-full uppercase tracking-wider">个人</span>
+                      )}
                     </div>
                     {t.isCompletedToday && <div className="w-2 h-2 bg-emerald-400 rounded-full" />}
                   </div>
@@ -248,7 +334,6 @@ export default function MeTab({
         </div>
       </div>
 
-      {/* Followers List Overlay */}
       <AnimatePresence>
         {isFollowersListOpen && (
           <motion.div 
@@ -311,7 +396,6 @@ export default function MeTab({
         )}
       </AnimatePresence>
 
-      {/* Friends List Overlay */}
       <AnimatePresence>
         {isFriendsListOpen && (
           <motion.div 
@@ -348,10 +432,6 @@ export default function MeTab({
                 friends.map((friend: any) => (
                   <div
                     key={friend.id}
-                    onClick={() => {
-                      onViewProfile(friend.id);
-                      setIsFriendsListOpen(false);
-                    }}
                     className="bg-white p-4 rounded-2xl flex items-center gap-4 border border-neutral-100 cursor-pointer active:scale-[0.98] transition-transform shadow-sm"
                   >
                     <img 
@@ -359,13 +439,29 @@ export default function MeTab({
                       className="w-12 h-12 rounded-full object-cover shadow-sm border border-neutral-100" 
                       alt={friend.name}
                       referrerPolicy="no-referrer"
+                      onClick={() => {
+                        onViewProfile(friend.id);
+                        setIsFriendsListOpen(false);
+                      }}
                     />
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0" onClick={() => {
+                      onViewProfile(friend.id);
+                      setIsFriendsListOpen(false);
+                    }}>
                       <h4 className="font-bold text-sm text-neutral-900 truncate">{friend.name}</h4>
                       <p className="text-[10px] text-neutral-400 font-bold tracking-widest uppercase mt-0.5">
                         ID: {friend.custom_id || friend.id.substring(0, 8)}
                       </p>
                     </div>
+                    {onDeleteFriend && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onDeleteFriend(friend.id); }}
+                        className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-red-50 transition-colors"
+                        title="删除好友"
+                      >
+                        <UserMinus size={16} className="text-red-400" />
+                      </button>
+                    )}
                   </div>
                 ))
               )}

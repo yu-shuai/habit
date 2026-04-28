@@ -71,11 +71,25 @@ export default function DecisionOverlay({
   const [choosing, setChoosing] = useState<'cashout' | 'continue' | null>(null);
   const [customDays, setCustomDays] = useState(habit.totalDays + 30);
   const blessing = BLESSINGS[Math.floor(Math.random() * BLESSINGS.length)];
+  const cashoutTimerRef = useRef<number | null>(null);
+  const hasFinalizedRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (cashoutTimerRef.current) window.clearTimeout(cashoutTimerRef.current);
+    };
+  }, []);
 
   const handleCashout = () => {
     setChoosing('cashout');
     setPhase('fireworks');
-    setTimeout(() => onDecision('cashout'), 3000);
+    hasFinalizedRef.current = false;
+    if (cashoutTimerRef.current) window.clearTimeout(cashoutTimerRef.current);
+    cashoutTimerRef.current = window.setTimeout(() => {
+      if (hasFinalizedRef.current) return;
+      hasFinalizedRef.current = true;
+      onDecision('cashout');
+    }, 3000);
   };
 
   const handleContinue = () => {
@@ -89,6 +103,13 @@ export default function DecisionOverlay({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/70 z-[300] flex items-center justify-center p-6 backdrop-blur-sm"
+      onClick={() => {
+        if (phase !== 'fireworks') return;
+        if (hasFinalizedRef.current) return;
+        hasFinalizedRef.current = true;
+        if (cashoutTimerRef.current) window.clearTimeout(cashoutTimerRef.current);
+        onDecision('cashout');
+      }}
     >
       <AnimatePresence mode="wait">
         {phase === 'choice' ? (
@@ -176,6 +197,7 @@ export default function DecisionOverlay({
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             className="relative w-full h-full flex items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
           >
             <ConfettiCanvas />
             <motion.div
@@ -190,6 +212,9 @@ export default function DecisionOverlay({
               </h2>
               <p className="text-white/90 text-lg font-bold mt-4 leading-relaxed drop-shadow">
                 {blessing}
+              </p>
+              <p className="text-white/60 text-[10px] font-black uppercase tracking-[0.3em] mt-6">
+                点击屏幕可跳过
               </p>
             </motion.div>
           </motion.div>

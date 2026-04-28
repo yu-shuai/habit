@@ -65,15 +65,17 @@ export const useUserActions = ({
     if (count !== null) setUserCheckInDays(() => count);
   }, [session, setUserProfile, setUserCheckInDays]);
 
-  /** Update display name */
   const updateProfile = useCallback(
-    async (name: string) => {
-      if (!session?.user?.id || !name.trim()) return;
-      await supabase.from('profiles').update({ name: name.trim() }).eq('id', session.user.id);
-      setUserProfile(prev => ({ ...prev, name: name.trim() }));
-      showToast('昵称已更新');
+    async (updates: Partial<{ name: string; avatar: string }>) => {
+      if (!session?.user?.id) return;
+      const dbUpdates: Record<string, string> = {};
+      if (updates.name !== undefined) dbUpdates.name = updates.name.trim();
+      if (updates.avatar !== undefined) dbUpdates.avatar = updates.avatar;
+      if (Object.keys(dbUpdates).length === 0) return;
+      await supabase.from('profiles').update(dbUpdates).eq('id', session.user.id);
+      setUserProfile(prev => ({ ...prev, ...updates }));
     },
-    [session, setUserProfile, showToast]
+    [session, setUserProfile]
   );
 
   /** Update custom ID */

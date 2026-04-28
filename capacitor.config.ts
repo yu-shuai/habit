@@ -3,7 +3,11 @@ import type { CapacitorConfig } from '@capacitor/cli';
 const config: CapacitorConfig = {
   appId: 'com.ycy.habit',
   appName: 'Habit',
-  webDir: 'dist'
+  webDir: 'dist',
+  server: {
+    androidScheme: 'https',
+    cleartext: true,
+  },
 };
 
 export default config;

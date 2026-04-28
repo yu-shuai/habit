@@ -1,14 +1,14 @@
 import { AnimatePresence, motion } from 'motion/react';
 
 const MOODS = [
-  { emoji: '😆', label: '超开心' },
-  { emoji: '😊', label: '开心' },
-  { emoji: '😐', label: '一般' },
-  { emoji: '😔', label: '低落' },
-  { emoji: '😤', label: '烦躁' },
-  { emoji: '😢', label: '难过' },
-  { emoji: '🤩', label: '兴奋' },
-  { emoji: '😴', label: '疲惫' },
+  { emoji: '😆', label: '超开心', color: 'from-amber-100 to-amber-50', border: 'border-amber-300', text: 'text-amber-600' },
+  { emoji: '😊', label: '开心', color: 'from-emerald-100 to-emerald-50', border: 'border-emerald-300', text: 'text-emerald-600' },
+  { emoji: '😐', label: '一般', color: 'from-slate-100 to-slate-50', border: 'border-slate-300', text: 'text-slate-600' },
+  { emoji: '😔', label: '低落', color: 'from-blue-100 to-blue-50', border: 'border-blue-300', text: 'text-blue-600' },
+  { emoji: '😤', label: '烦躁', color: 'from-rose-100 to-rose-50', border: 'border-rose-300', text: 'text-rose-600' },
+  { emoji: '😢', label: '难过', color: 'from-indigo-100 to-indigo-50', border: 'border-indigo-300', text: 'text-indigo-600' },
+  { emoji: '🤩', label: '兴奋', color: 'from-purple-100 to-purple-50', border: 'border-purple-300', text: 'text-purple-600' },
+  { emoji: '😴', label: '疲惫', color: 'from-cyan-100 to-cyan-50', border: 'border-cyan-300', text: 'text-cyan-600' },
 ];
 
 interface MoodModalProps {
@@ -43,26 +43,41 @@ export default function MoodModal({ isOpen, onClose, currentMood, setCurrentMood
               选择一个表情来记录你的状态
             </p>
             <div className="grid grid-cols-4 gap-4 mb-8">
-              {MOODS.map(m => (
-                <motion.button
-                  key={m.emoji}
-                  whileHover={{ scale: 1.15 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => { setCurrentMood(m.emoji); onClose(); }}
-                  className={`flex flex-col items-center gap-2 p-3 rounded-2xl transition-colors ${
-                    currentMood === m.emoji
-                      ? 'bg-neutral-900 text-white'
-                      : 'bg-neutral-50 hover:bg-neutral-100'
-                  }`}
-                >
-                  <span className="text-3xl">{m.emoji}</span>
-                  <span className={`text-[9px] font-black uppercase tracking-wider ${
-                    currentMood === m.emoji ? 'text-white/70' : 'text-neutral-400'
-                  }`}>
-                    {m.label}
-                  </span>
-                </motion.button>
-              ))}
+              {MOODS.map(m => {
+                const isSelected = currentMood === m.emoji;
+                return (
+                  <motion.button
+                    key={m.emoji}
+                    whileHover={{ scale: 1.1, y: -4 }}
+                    whileTap={{ scale: 0.9 }}
+                    animate={isSelected ? {
+                      scale: [1, 1.15, 1.1],
+                      transition: { duration: 0.4, ease: "easeOut" }
+                    } : {}}
+                    onClick={() => { setCurrentMood(m.emoji); onClose(); }}
+                    className={`flex flex-col items-center gap-2 p-3 rounded-2xl transition-all duration-300 relative overflow-hidden ${
+                      isSelected
+                        ? `bg-gradient-to-br ${m.color} ${m.border} border-2 shadow-lg`
+                        : 'bg-neutral-50 hover:bg-neutral-100 border-2 border-transparent'
+                    }`}
+                  >
+                    <motion.span
+                      className="text-3xl"
+                      animate={isSelected ? {
+                        rotate: [0, -10, 10, -5, 5, 0],
+                        transition: { duration: 0.5, delay: 0.1 }
+                      } : {}}
+                    >
+                      {m.emoji}
+                    </motion.span>
+                    <span className={`text-[9px] font-black uppercase tracking-wider transition-colors ${
+                      isSelected ? `${m.text}` : 'text-neutral-400'
+                    }`}>
+                      {m.label}
+                    </span>
+                  </motion.button>
+                );
+              })}
             </div>
             <button
               onClick={onClose}

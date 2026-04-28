@@ -45,6 +45,8 @@ export default function App() {
     activities, setActivities,
     editingPostId, setEditingPostId,
     confirmDeleteId, setConfirmDeleteId,
+    confirmDeleteMeta, setConfirmDeleteMeta,
+    confirmFriendDelete, setConfirmFriendDelete,
     selectedTaskDetails, setSelectedTaskDetails,
     currentMood, setCurrentMood,
     decisionHabit, setDecisionHabit,
@@ -112,11 +114,12 @@ export default function App() {
       setIsPasswordModalOpen, setNewPassInput, newPassInput, showToast,
     });
 
-  const { fetchFriendRequests, fetchFriends, handleSearch, handleSendFriendRequest, handleAcceptFriendRequest, handleRejectFriendRequest } =
-    useFriendActions({
+  const friendActions = useFriendActions({
       session, userProfile, setFriendRequests, setFriends,
       setSearchResults, setSearchQuery, setIsSearching, showToast,
     });
+
+  const { fetchFriendRequests, fetchFriends, handleSearch, handleSendFriendRequest, handleAcceptFriendRequest, handleRejectFriendRequest, handleDeleteFriend } = friendActions;
 
   const { fetchFollowings, fetchFollowers, handleFollow, isFollowing } = useFollowActions({
     session, followings, setFollowings, setFollowers, showToast,
@@ -124,13 +127,15 @@ export default function App() {
 
   const {
     handleCheck, handleDecision, handleTeamVote,
-    handleDelete, confirmDelete, checkAndUpdateStreaks,
+    handleDelete, confirmDelete, checkAndUpdateStreaks, checkTeamVoteTimeouts,
     handleAddTask, handleJoinTeam, handleStartTeam, handleKickMember,
+    handleClaimReward,
   } = useHabitActions({
       session, userProfile, tasks, completedTasks,
       taskName, taskDays, taskType, joinCode, activities,
       setTasks, setCompletedTasks, setActivities,
       setConfirmDeleteId, confirmDeleteId,
+      setConfirmDeleteMeta,
       setDecisionHabit, setSelectedMedal,
       setIsModalOpen, setTaskName, setJoinCode,
       setUserCheckInDays, setShowFireworks, showToast,
@@ -184,11 +189,29 @@ export default function App() {
       )
       .subscribe();
 
+    // Realtime subscription for activities (likes/comments/visibility updates)
+    const activityChannel = supabase.channel('public:activities')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'activities' },
+        () => {
+          fetchActivities();
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(friendChannel);
       supabase.removeChannel(habitChannel);
+      supabase.removeChannel(activityChannel);
     };
   }, [session?.user?.id, fetchFriendRequests, fetchFriends]);
+
+  // Team vote timeout check (best-effort client side)
+  useEffect(() => {
+    if (!tasks.length) return;
+    checkTeamVoteTimeouts(tasks);
+  }, [tasks, checkTeamVoteTimeouts]);
 
   const [lastViewedFriendsAt, setLastViewedFriendsAt] = useState(() => Number(localStorage.getItem('lastViewedFriendsAt')) || 0);
 
@@ -281,7 +304,15 @@ export default function App() {
               tasks={tasks} completedTasks={completedTasks} activities={activities} friends={friends}
               joinCode={joinCode} setJoinCode={setJoinCode}
               handleJoinTeam={handleJoinTeam} handleStartTeam={handleStartTeam} handleKickMember={handleKickMember}
-              handleCheck={handleCheck} handleDelete={handleDelete}
+              handleCheck={handleCheck}
+              handleDelete={handleDelete}
+              handleTeamVote={handleTeamVote}
+              currentUserId={session?.user?.id}
+              onDeleteFriend={(friendId: string) => {
+                const f = friends.find(x => x.id === friendId);
+                setConfirmFriendDelete({ id: friendId, name: f?.name || '该用户' });
+              }}
+              onClaimReward={handleClaimReward}
               handleLike={handleLike} handleAddComment={handleAddComment}
               handleDeleteComment={handleDeleteComment} handleChangeVisibility={handleChangeVisibility}
               setSelectedPost={setSelectedPost} setSelectedTaskDetails={setSelectedTaskDetails}
@@ -321,8 +352,31 @@ export default function App() {
 
       <DeleteConfirmModal
         isOpen={!!confirmDeleteId}
-        onClose={() => setConfirmDeleteId(null)}
+        onClose={() => { setConfirmDeleteId(null); setConfirmDeleteMeta(null); }}
         onConfirm={confirmDelete}
+        title={confirmDeleteMeta?.isArchived ? '确定删除归档？' : '删除不可逆'}
+        description={
+          confirmDeleteMeta?.isArchived
+            ? `你正在删除已完成任务「${confirmDeleteMeta.name}」。\n为防止误删，请再次确认。\n（已获得的勋章不会被删除）`
+            : '该任务下所有的打卡记录与勋章进度将永久消失。\n确定要放弃这个目标吗？'
+        }
+        confirmText={confirmDeleteMeta?.isArchived ? '确定删除归档' : '彻底删除'}
+        cancelText="取消"
+      />
+
+      <DeleteConfirmModal
+        isOpen={!!confirmFriendDelete}
+        onClose={() => setConfirmFriendDelete(null)}
+        onConfirm={async () => {
+          if (!confirmFriendDelete) return;
+          await handleDeleteFriend(confirmFriendDelete.id);
+          setConfirmFriendDelete(null);
+        }}
+        title="确定删除好友？"
+        description={confirmFriendDelete ? `你将与「${confirmFriendDelete.name}」解除好友关系。\n此操作不可撤销。` : ''}
+        confirmText="确定删除"
+        cancelText="取消"
+        confirmClassName="bg-red-500"
       />
 
       <TaskDetailsDrawer
@@ -355,7 +409,14 @@ export default function App() {
           <DecisionOverlay
             habit={decisionHabit}
             isTeamCreator={decisionHabit.type === 'team' && decisionHabit.creatorId === session?.user?.id}
-            onDecision={(choice, customDays) => handleDecision(decisionHabit, choice, customDays)}
+            onDecision={(choice, customDays) => {
+              if (decisionHabit.type === 'team' && choice === 'continue') {
+                handleTeamVote(decisionHabit.id, 'continue', customDays);
+                setDecisionHabit(null);
+              } else {
+                handleDecision(decisionHabit, choice, customDays);
+              }
+            }}
           />
         )}
       </AnimatePresence>

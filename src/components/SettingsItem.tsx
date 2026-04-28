@@ -1,7 +1,8 @@
+import { type ReactNode } from 'react';
 import { ChevronRight } from 'lucide-react';
 
 interface SettingsItemProps {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   value?: string;
   onClick?: () => void;

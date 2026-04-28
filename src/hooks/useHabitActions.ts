@@ -1,9 +1,8 @@
 import { useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { Habit, Post, UserProfile, VoteEntry } from '../types';
+import { Habit, Post, UserProfile, VoteEntry, Visibility } from '../types';
 import { getMedalForDays, getTodayString } from '../utils/app';
 
-const today = getTodayString;
 const daysBetween = (a: string, b: string) =>
   Math.floor((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
 
@@ -22,6 +21,7 @@ interface UseHabitActionsParams {
   setActivities: (updater: (prev: Post[]) => Post[]) => void;
   setConfirmDeleteId: (id: string | null) => void;
   confirmDeleteId: string | null;
+  setConfirmDeleteMeta?: (meta: { id: string; name: string; isArchived: boolean } | null) => void;
   setDecisionHabit: (habit: Habit | null) => void;
   setSelectedMedal: (medal: { days: number; taskName: string } | null) => void;
   setIsModalOpen: (open: boolean) => void;
@@ -49,6 +49,7 @@ export const useHabitActions = ({
   setActivities,
   setConfirmDeleteId,
   confirmDeleteId,
+  setConfirmDeleteMeta,
   setDecisionHabit,
   setSelectedMedal,
   setIsModalOpen,
@@ -61,7 +62,7 @@ export const useHabitActions = ({
 
   /** ─── 检查每个任务是否断签，更新惩罚/失败状态 ─── */
   const checkAndUpdateStreaks = useCallback(async (currentTasks: Habit[]) => {
-    const todayStr = today();
+    const todayStr = getTodayString();
     for (const habit of currentTasks) {
       if (habit.isArchived || habit.isFailed || !habit.lastCheckDate) continue;
       if (habit.lastCheckDate === todayStr) continue;
@@ -101,7 +102,10 @@ export const useHabitActions = ({
   /** ─── 打卡 ─── */
   const handleCheck = useCallback(async (id: string, skipAutoPost = false) => {
     const habit = tasks.find(t => t.id === id);
-    if (!habit || habit.isFailed || habit.isCompletedToday) return;
+    if (!habit || habit.isFailed) return;
+    // Allow "settlement/claim" click even if the habit was completed today.
+    // Only block duplicate check-ins when the goal is not yet reached.
+    if (habit.isCompletedToday && habit.currentProgress < habit.totalDays) return;
 
     if (habit.currentProgress >= habit.totalDays) {
       if (habit.type === 'team' && habit.creatorId !== session?.user?.id) {
@@ -112,10 +116,9 @@ export const useHabitActions = ({
       return;
     }
 
-    if (habit.isCompletedToday) return;
     if (habit.type === 'team' && !habit.isStarted) return;
 
-    const todayStr = today();
+    const todayStr = getTodayString();
 
     // 防重复（DB 层）
     const { data: existingLog } = await supabase
@@ -168,9 +171,9 @@ export const useHabitActions = ({
         if (newProgress >= habit.totalDays) {
           // 团队任务完成，不再自动弹窗，提示队长点击
           if (habit.creatorId === session?.user?.id) {
-            showToast('🎉 团队任务完成！请点击卡片领取奖励');
+            showToast('🎉 团队任务完成！点击卡片进行结算');
           } else {
-            showToast('🎉 团队任务已完成，等待队长决策');
+            showToast('🎉 团队任务已完成，等待队长结算');
           }
         }
         showToast('🎉 全员打卡！进度 +1');
@@ -216,15 +219,16 @@ export const useHabitActions = ({
       }).eq('id', id);
 
       if (!newPenaltyMode && newProgress >= habit.totalDays) {
-        showToast('🎉 任务完成！请点击卡片领取奖励');
+        showToast('🎉 任务完成！点击卡片进行结算');
       }
     }
 
-    // 自动发帖
     if (!skipAutoPost) {
       const visibility = habit.type === 'team' ? 'friends' : 'private';
+      const dayNumber = habit.currentProgress + 1;
+      const autoPostId = `auto-${id}-${todayStr}`;
       const autoPost: Post = {
-        id: `auto-${id}-${todayStr}`, // Deterministic ID to avoid duplicates on the same day
+        id: autoPostId,
         habitId: id,
         user: { id: userProfile.id, name: userProfile.name, avatar: userProfile.avatar },
         images: [],
@@ -232,25 +236,26 @@ export const useHabitActions = ({
         likedBy: [],
         comments: [],
         visibility: visibility as Visibility,
-        content: `✅ 已完成今日「${habit.name}」挑战！`,
+        content: `✅ 已完成今日「${habit.name}」挑战！第 ${dayNumber} 天`,
         createdAt: Date.now(),
       };
       
-      // Update local state, ensuring no duplicates by ID
       setActivities(prev => {
         if (prev.some(a => a.id === autoPost.id)) return prev;
         return [autoPost, ...prev];
       });
 
-      // Also persist to DB
-      await supabase.from('posts').insert({
-        id: autoPost.id,
-        user_id: userProfile.id,
+      await supabase.from('activities').insert({
+        id: autoPostId,
         habit_id: id,
-        content: autoPost.content,
-        tag: autoPost.tag,
-        visibility: autoPost.visibility,
+        user_id: userProfile.id,
+        user: autoPost.user,
         images: [],
+        tag: autoPost.tag,
+        content: autoPost.content,
+        visibility: autoPost.visibility,
+        liked_by: [],
+        comments: [],
         created_at: new Date().toISOString()
       });
     }
@@ -269,10 +274,45 @@ export const useHabitActions = ({
       setTasks(prev => prev.filter(t => t.id !== habit.id));
 
       const medal = getMedalForDays(habit.totalDays);
-      if (medal) setSelectedMedal({ days: medal, taskName: habit.name });
+      if (medal) {
+        setSelectedMedal({ days: medal, taskName: habit.name });
+        // Persist medal as an activity record (won't be removed when deleting habit)
+        const medalActivityId = `medal-${habit.id}-${medal}-${Date.now()}`;
+        const medalPost: any = {
+          id: medalActivityId,
+          habit_id: habit.id,
+          habitId: habit.id,
+          user_id: userProfile.id,
+          user: { id: userProfile.id, name: userProfile.name, avatar: userProfile.avatar },
+          images: [],
+          tag: `medal:${medal}`,
+          content: `🏅 获得 ${medal} 天勋章 · 「${habit.name}」`,
+          visibility: 'private',
+          liked_by: [],
+          likedBy: [],
+          comments: [],
+          created_at: new Date().toISOString(),
+          createdAt: Date.now(),
+          type: 'medal',
+        };
+        setActivities(prev => [medalPost as Post, ...prev]);
+        await supabase.from('activities').insert({
+          id: medalActivityId,
+          habit_id: habit.id,
+          user_id: userProfile.id,
+          user: medalPost.user,
+          images: [],
+          tag: medalPost.tag,
+          content: medalPost.content,
+          visibility: 'private',
+          liked_by: [],
+          comments: [],
+          type: 'medal',
+        });
+      }
 
       setShowFireworks(true);
-      setTimeout(() => setShowFireworks(false), 3500);
+      setTimeout(() => setShowFireworks(false), 6000);
 
       await supabase.from('habits').update({
         is_archived: true,
@@ -294,7 +334,7 @@ export const useHabitActions = ({
       showToast(`继续挑战！新目标：${nextGoal} 天`);
     }
     setDecisionHabit(null);
-  }, [setTasks, setCompletedTasks, setSelectedMedal, setDecisionHabit, setShowFireworks, showToast]);
+  }, [setTasks, setCompletedTasks, setActivities, setSelectedMedal, setDecisionHabit, setShowFireworks, showToast, userProfile]);
 
   /** ─── 团队投票 ─── */
   const handleTeamVote = useCallback(async (
@@ -305,60 +345,151 @@ export const useHabitActions = ({
     const habit = tasks.find(t => t.id === habitId);
     if (!habit) return;
 
+    const userId = session?.user?.id;
+    if (!userId) return;
+
+    const memberCount = habit.members?.length ?? 1;
     const currentVotes: VoteEntry[] = habit.voteStatus ?? [];
-    const alreadyVoted = currentVotes.find(v => v.userId === session?.user?.id);
+    const proposal = currentVotes.find(v => v.userId === habit.creatorId && v.choice === 'continue' && typeof v.newDays === 'number');
+    const now = Date.now();
+
+    // Captain initiates settlement
+    if (!proposal) {
+      if (habit.creatorId !== userId) {
+        showToast('等待队长发起结算/加码投票');
+        return;
+      }
+
+      if (choice === 'cashout') {
+        await handleDecision(habit, 'cashout');
+        await supabase.from('habits').update({ vote_status: [] }).eq('id', habitId);
+        setTasks(prev => prev.map(t => t.id === habitId ? { ...t, voteStatus: [] } : t));
+        return;
+      }
+
+      const proposedDays = newDays;
+      if (!proposedDays || proposedDays <= habit.totalDays) {
+        showToast('加码天数必须大于当前目标天数');
+        return;
+      }
+
+      const captainProposal: VoteEntry = { userId, choice: 'continue', newDays: proposedDays, votedAt: now };
+      const updated = [captainProposal];
+      setTasks(prev => prev.map(t => t.id === habitId ? { ...t, voteStatus: updated } : t));
+      await supabase.from('habits').update({ vote_status: updated }).eq('id', habitId);
+      showToast(`已发起加码投票：${proposedDays} 天（24小时内需全员同意）`);
+      return;
+    }
+
+    // Timeout → treat as veto
+    const isTimedOut = (now - proposal.votedAt) > 24 * 60 * 60 * 1000;
+    if (isTimedOut) {
+      await handleDecision(habit, 'cashout');
+      await supabase.from('habits').update({ vote_status: [] }).eq('id', habitId);
+      setTasks(prev => prev.map(t => t.id === habitId ? { ...t, voteStatus: [] } : t));
+      showToast('投票超时：按拒绝处理，已结算');
+      return;
+    }
+
+    const alreadyVoted = currentVotes.some(v => v.userId === userId);
     if (alreadyVoted) { showToast('你已投票'); return; }
+    if (habit.creatorId === userId) { showToast('你已发起投票，等待队员表态'); return; }
 
-    const newVote: VoteEntry = {
-      userId: session?.user?.id,
-      choice,
-      newDays,
-      votedAt: Date.now(),
-    };
-    const updatedVotes = [...currentVotes, newVote];
+    if (choice === 'cashout') {
+      const updatedVotes = [...currentVotes, { userId, choice: 'cashout', votedAt: now } as VoteEntry];
+      setTasks(prev => prev.map(t => t.id === habitId ? { ...t, voteStatus: updatedVotes } : t));
+      await supabase.from('habits').update({ vote_status: updatedVotes }).eq('id', habitId);
+      await handleDecision(habit, 'cashout');
+      await supabase.from('habits').update({ vote_status: [] }).eq('id', habitId);
+      setTasks(prev => prev.map(t => t.id === habitId ? { ...t, voteStatus: [] } : t));
+      return;
+    }
 
+    // Member agrees
+    const updatedVotes = [...currentVotes, { userId, choice: 'continue', votedAt: now } as VoteEntry];
     setTasks(prev => prev.map(t => t.id === habitId ? { ...t, voteStatus: updatedVotes } : t));
     await supabase.from('habits').update({ vote_status: updatedVotes }).eq('id', habitId);
 
-    const memberCount = habit.members?.length ?? 1;
-    const hasCashout = updatedVotes.some(v => v.choice === 'cashout');
-    const allVoted = updatedVotes.length >= memberCount;
+    const hasVeto = updatedVotes.some(v => v.choice === 'cashout');
+    const allMembersVoted = updatedVotes.length >= memberCount; // includes captain proposal
+    const allContinue = allMembersVoted && !hasVeto && updatedVotes.every(v => v.choice === 'continue');
 
-    if (hasCashout || allVoted) {
-      if (hasCashout || !updatedVotes.every(v => v.choice === 'continue')) {
-        // 一票否决 → 结算
-        await handleDecision(habit, 'cashout');
-      } else {
-        // 全员同意 → 继续
-        const agreedDays = newDays ?? habit.totalDays + 30;
-        await handleDecision(habit, 'continue', agreedDays);
-      }
-      await supabase.from('habits').update({ vote_status: [] }).eq('id', habitId);
+    if (allContinue) {
+      // Apply extension (no medal now). Keep current_progress as-is, just raise total_days.
+      const nextGoal = proposal.newDays!;
+      setTasks(prev => prev.map(t => t.id === habitId ? { ...t, totalDays: nextGoal, isCompletedToday: false, voteStatus: [] } : t));
+      await supabase.from('habits').update({
+        total_days: nextGoal,
+        is_completed_today: false,
+        vote_status: [],
+      }).eq('id', habitId);
+      showToast(`全员同意：进入加码延期（${nextGoal} 天）`);
     } else {
-      showToast(choice === 'continue' ? `同意继续 ${newDays} 天` : '已投票结束');
+      showToast('已投票');
     }
   }, [tasks, session, setTasks, handleDecision, showToast]);
 
+  /** ─── 团队投票超时扫描（24h 未全员同意 → 结算） ─── */
+  const checkTeamVoteTimeouts = useCallback(async (currentTasks: Habit[]) => {
+    const now = Date.now();
+    const candidates = currentTasks.filter(h => h.type === 'team' && (h.voteStatus?.length || 0) > 0 && h.currentProgress >= h.totalDays && !h.isFailed && !h.isArchived);
+    for (const habit of candidates) {
+      const proposal = (habit.voteStatus || []).find(v => v.userId === habit.creatorId && v.choice === 'continue' && typeof v.newDays === 'number');
+      if (!proposal) continue;
+      const memberCount = habit.members?.length ?? 1;
+      const hasVeto = (habit.voteStatus || []).some(v => v.choice === 'cashout');
+      const allMembersVoted = (habit.voteStatus || []).length >= memberCount;
+      const allContinue = allMembersVoted && !hasVeto && (habit.voteStatus || []).every(v => v.choice === 'continue');
+      if (allContinue) continue;
+      if ((now - proposal.votedAt) > 24 * 60 * 60 * 1000) {
+        await handleDecision(habit, 'cashout');
+        await supabase.from('habits').update({ vote_status: [] }).eq('id', habit.id);
+        setTasks(prev => prev.map(t => t.id === habit.id ? { ...t, voteStatus: [] } : t));
+      }
+    }
+  }, [handleDecision, setTasks]);
+
   /** ─── 删除 ─── */
   const handleDelete = useCallback((id: string) => {
-    const habit = tasks.find(t => t.id === id);
-    if (habit?.type === 'team' && habit.isStarted && !habit.isFailed && !habit.isArchived) {
-      showToast('团队任务已开始，不可中途退出或删除');
+    const habit = tasks.find(t => t.id === id) || completedTasks.find(t => t.id === id);
+    if (!habit) return;
+
+    if (habit.type === 'team' && habit.isStarted && !habit.isFailed && !habit.isArchived && !habit.captainDeleted) {
+      if (habit.creatorId === session?.user?.id) {
+        setConfirmDeleteId(id);
+        setConfirmDeleteMeta?.({ id, name: habit.name, isArchived: false });
+      } else {
+        showToast('只有队长可以删除进行中的团队任务');
+      }
       return;
     }
     setConfirmDeleteId(id);
-  }, [tasks, setConfirmDeleteId, showToast]);
+    setConfirmDeleteMeta?.({ id, name: habit.name, isArchived: !!habit.isArchived });
+  }, [tasks, completedTasks, session, setConfirmDeleteId, showToast]);
 
   const confirmDelete = useCallback(async () => {
     if (!confirmDeleteId) return;
+    const habit = tasks.find(t => t.id === confirmDeleteId) || completedTasks.find(t => t.id === confirmDeleteId);
+
+    if (habit?.type === 'team' && habit.isStarted && !habit.isFailed && !habit.isArchived && !habit.captainDeleted && habit.creatorId === session?.user?.id) {
+      await supabase.from('habits').update({ captain_deleted: true }).eq('id', confirmDeleteId);
+      setTasks(prev => prev.map(t => t.id === confirmDeleteId ? { ...t, captainDeleted: true } : t));
+      setCompletedTasks(prev => prev.map(t => t.id === confirmDeleteId ? { ...t, captainDeleted: true } : t));
+      setConfirmDeleteId(null);
+      setConfirmDeleteMeta?.(null);
+      showToast('任务已标记为删除，队员可自行移除');
+      return;
+    }
+
     setTasks(prev => prev.filter(t => t.id !== confirmDeleteId));
     setCompletedTasks(prev => prev.filter(t => t.id !== confirmDeleteId));
     setActivities(prev => prev.filter(a => a.habitId !== confirmDeleteId));
     await supabase.from('habits').delete().eq('id', confirmDeleteId);
-    await supabase.from('activities').delete().eq('habit_id', confirmDeleteId);
+    await supabase.from('activities').delete().eq('habit_id', confirmDeleteId).neq('type', 'medal');
     setConfirmDeleteId(null);
+    setConfirmDeleteMeta?.(null);
     showToast('任务已删除');
-  }, [confirmDeleteId, setTasks, setCompletedTasks, setActivities, setConfirmDeleteId, showToast]);
+  }, [confirmDeleteId, tasks, completedTasks, session, setTasks, setCompletedTasks, setActivities, setConfirmDeleteId, showToast]);
 
   /** ─── 创建任务 ─── */
   const handleAddTask = useCallback(async () => {
@@ -459,10 +590,62 @@ export const useHabitActions = ({
     showToast('成员已移除');
   }, [tasks, setTasks, showToast]);
 
+  /** ─── 领取已完成任务的奖励 ─── */
+  const handleClaimReward = useCallback(async (habit: Habit) => {
+    const existingMedal = activities.find(
+      a => a.type === 'medal' && a.habitId === habit.id && (a.user?.id === userProfile.id || (a as any).user_id === userProfile.id)
+    );
+    if (existingMedal) {
+      showToast('奖励已领取');
+      return;
+    }
+
+    const medal = getMedalForDays(habit.totalDays);
+    if (medal) {
+      setSelectedMedal({ days: medal, taskName: habit.name });
+      const medalActivityId = `medal-${habit.id}-${medal}-${userProfile.id}`;
+      const medalPost: any = {
+        id: medalActivityId,
+        habit_id: habit.id,
+        habitId: habit.id,
+        user_id: userProfile.id,
+        user: { id: userProfile.id, name: userProfile.name, avatar: userProfile.avatar },
+        images: [],
+        tag: `medal:${medal}`,
+        content: `🏅 获得 ${medal} 天勋章 · 「${habit.name}」`,
+        visibility: 'private',
+        liked_by: [],
+        likedBy: [],
+        comments: [],
+        created_at: new Date().toISOString(),
+        createdAt: Date.now(),
+        type: 'medal',
+      };
+      setActivities(prev => [medalPost as Post, ...prev]);
+      await supabase.from('activities').insert({
+        id: medalActivityId,
+        habit_id: habit.id,
+        user_id: userProfile.id,
+        user: medalPost.user,
+        images: [],
+        tag: medalPost.tag,
+        content: medalPost.content,
+        visibility: 'private',
+        liked_by: [],
+        comments: [],
+        type: 'medal',
+      });
+    }
+    setShowFireworks(true);
+    setTimeout(() => setShowFireworks(false), 6000);
+  }, [activities, userProfile, setSelectedMedal, setActivities, setShowFireworks, showToast]);
+
   return {
     checkAndUpdateStreaks,
     handleCheck, handleDecision, handleTeamVote,
+    checkTeamVoteTimeouts,
     handleDelete, confirmDelete,
     handleAddTask, handleJoinTeam, handleStartTeam, handleKickMember,
+    handleClaimReward,
   };
 };

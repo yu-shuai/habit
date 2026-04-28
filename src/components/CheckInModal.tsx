@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Camera, Lock, Users, Globe } from 'lucide-react';
+import { X, Camera, Lock, Users, Globe, Copy } from 'lucide-react';
 import { ChangeEvent } from 'react';
 import { Visibility, Habit, Post, UserProfile, InteractionScope } from '../types';
 import { copyToClipboard } from '../utils/app';
@@ -35,6 +35,11 @@ export const CheckInDrawer = ({
   editingPostId, setEditingPostId,
   onPublish, onImageUpload,
 }: CheckInDrawerProps) => {
+  const selectedHabit = tasks.find(t => t.id === checkInHabitId);
+  const dayNumber = selectedHabit
+    ? (selectedHabit.isCompletedToday ? selectedHabit.currentProgress : (selectedHabit.currentProgress + 1))
+    : null;
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -67,6 +72,21 @@ export const CheckInDrawer = ({
                 <label className="text-[10px] font-black uppercase text-neutral-400 tracking-[0.2em]">
                   {editingPostId ? '对应任务' : '选择任务'}
                 </label>
+                {selectedHabit && dayNumber !== null && (
+                  <div className="flex items-center justify-between bg-neutral-50 border border-neutral-100 rounded-2xl px-4 py-3">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-400">今日进度</span>
+                      <span className="text-sm font-bold text-neutral-800 mt-0.5">
+                        第 {dayNumber} 天 / 共 {selectedHabit.totalDays} 天
+                      </span>
+                    </div>
+                    {selectedHabit.isCompletedToday && (
+                      <span className="text-[10px] font-black text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full uppercase tracking-widest">
+                        今日已打卡
+                      </span>
+                    )}
+                  </div>
+                )}
                 <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                   {tasks.map(t => {
                     const isTeamReady = t.type === 'single' || t.isStarted;
@@ -94,7 +114,7 @@ export const CheckInDrawer = ({
               <div className="flex flex-col gap-4">
                 <label className="text-[10px] font-black uppercase text-neutral-400 tracking-[0.2em]">分享瞬间</label>
                 <textarea
-                  placeholder="分享此刻的自律感..."
+                  placeholder={selectedHabit && dayNumber ? `今天是「${selectedHabit.name}」的第 ${dayNumber} 天，写点什么吧...` : "分享此刻的自律感..."}
                   value={checkInContent}
                   onChange={e => setCheckInContent(e.target.value)}
                   className="w-full h-32 bg-neutral-50 p-6 rounded-[2rem] text-lg font-medium outline-none resize-none border-2 border-transparent focus:border-neutral-100 transition-colors"
@@ -258,9 +278,23 @@ interface DeleteConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => void;
+  title?: string;
+  description?: string;
+  confirmText?: string;
+  cancelText?: string;
+  confirmClassName?: string;
 }
 
-export const DeleteConfirmModal = ({ isOpen, onClose, onConfirm }: DeleteConfirmModalProps) => (
+export const DeleteConfirmModal = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  title = '删除不可逆',
+  description = '该任务下所有的打卡记录与勋章进度将永久消失。确定要放弃这个目标吗？',
+  confirmText = '彻底删除',
+  cancelText = '点错了',
+  confirmClassName = 'bg-red-500',
+}: DeleteConfirmModalProps) => (
   <AnimatePresence>
     {isOpen && (
       <>
@@ -273,13 +307,25 @@ export const DeleteConfirmModal = ({ isOpen, onClose, onConfirm }: DeleteConfirm
           initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
           className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[85%] max-w-sm bg-white rounded-[2.5rem] p-10 z-[202] text-center editorial-shadow"
         >
-          <h3 className="font-headline font-black text-xl italic uppercase tracking-tighter mb-4">删除不可逆</h3>
+          <h3 className="font-headline font-black text-xl italic uppercase tracking-tighter mb-4">{title}</h3>
           <p className="text-sm text-neutral-500 font-medium leading-relaxed mb-8">
-            该任务下所有的打卡记录与勋章进度将永久消失。<br />确定要放弃这个目标吗？
+            {description.split('\n').map((line, idx) => (
+              <span key={idx}>
+                {line}
+                <br />
+              </span>
+            ))}
           </p>
           <div className="flex flex-col gap-3">
-            <button onClick={onConfirm} className="w-full py-4 bg-red-500 text-white rounded-full font-bold uppercase tracking-widest text-xs">彻底删除</button>
-            <button onClick={onClose} className="w-full py-4 bg-neutral-100 text-neutral-400 rounded-full font-bold uppercase tracking-widest text-xs">点错了</button>
+            <button
+              onClick={onConfirm}
+              className={`w-full py-4 text-white rounded-full font-bold uppercase tracking-widest text-xs ${confirmClassName}`}
+            >
+              {confirmText}
+            </button>
+            <button onClick={onClose} className="w-full py-4 bg-neutral-100 text-neutral-400 rounded-full font-bold uppercase tracking-widest text-xs">
+              {cancelText}
+            </button>
           </div>
         </motion.div>
       </>

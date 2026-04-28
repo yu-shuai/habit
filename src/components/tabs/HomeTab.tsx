@@ -2,7 +2,7 @@ import { useState } from 'react';
 import MomentItem from '../MomentItem';
 import FollowingTab from './FollowingTab';
 import { AnimatePresence, motion } from 'motion/react';
-import { Copy, Check, Users, X } from 'lucide-react';
+import { Copy, Check, Users, X, ThumbsDown, ThumbsUp, Crown } from 'lucide-react';
 import { Habit, HomeSubTab, Post, UserProfile, Visibility, InteractionScope } from '../../types';
 import { copyToClipboard, getTodayString } from '../../utils/app';
 
@@ -25,6 +25,7 @@ interface HomeTabProps {
   handleChangeVisibility: (postId: string, visibility: Visibility) => void;
   setSelectedPost: (post: Post | null) => void;
   showToast: (message: string) => void;
+  handleTeamVote?: (habitId: string, choice: 'continue' | 'cashout', newDays?: number) => void;
 }
 
 export default function HomeTab({
@@ -35,6 +36,7 @@ export default function HomeTab({
   setSelectedTaskDetails,
   handleLike, handleAddComment, handleDeleteComment, handleChangeVisibility,
   setSelectedPost, showToast,
+  handleTeamVote,
 }: HomeTabProps) {
   const [kickTarget, setKickTarget] = useState<{ teamId: string; memberId: string; memberName: string } | null>(null);
 
@@ -113,15 +115,28 @@ export default function HomeTab({
           {/* Team cards */}
           {tasks.filter(t => t.type === 'team').map(t => {
             const isCreator = t.creatorId === userProfile.id;
+            const isCaptainDeleted = t.captainDeleted === true;
+            const isCompleted = t.currentProgress >= t.totalDays;
+            const proposal = (t.voteStatus || []).find(v => v.userId === t.creatorId && v.choice === 'continue' && typeof v.newDays === 'number');
+            const hasVoted = (t.voteStatus || []).some(v => v.userId === userProfile.id);
+            const isVoteOpen = !!proposal && isCompleted && !t.isFailed && !t.isArchived && !isCaptainDeleted;
+            const isTimedOut = proposal ? (Date.now() - proposal.votedAt) > 24 * 60 * 60 * 1000 : false;
             return (
               <div
                 key={t.id}
                 onClick={() => setSelectedTaskDetails(t)}
                 className={`rounded-[2.5rem] p-7 text-white relative overflow-hidden group cursor-pointer active:scale-[0.98] transition-transform ${
-                  t.isStarted ? 'bg-neutral-900' : 'bg-neutral-800'
+                  isCaptainDeleted ? 'bg-neutral-300 text-neutral-500' : t.isStarted ? 'bg-neutral-900' : 'bg-neutral-800'
                 }`}
               >
                 <div className="relative z-10">
+                  {/* Captain deleted banner */}
+                  {isCaptainDeleted && (
+                    <div className="bg-red-100 text-red-600 text-[10px] font-black uppercase tracking-widest text-center py-2 rounded-2xl mb-4">
+                      队长已删除该任务
+                    </div>
+                  )}
+
                   {/* Header */}
                   <div className="flex justify-between items-start mb-5">
                     <div>
@@ -130,6 +145,24 @@ export default function HomeTab({
                       </span>
                       <h4 className="text-2xl font-headline font-black italic mt-0.5 leading-none uppercase tracking-tighter">{t.name}</h4>
                     </div>
+                    {isVoteOpen && !isCreator && !hasVoted && !isTimedOut && handleTeamVote && (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={e => { e.stopPropagation(); handleTeamVote(t.id, 'continue'); }}
+                          className="w-10 h-10 rounded-full bg-emerald-400 text-neutral-900 flex items-center justify-center shadow-lg active:scale-95"
+                          title="同意"
+                        >
+                          <ThumbsUp size={16} />
+                        </button>
+                        <button
+                          onClick={e => { e.stopPropagation(); handleTeamVote(t.id, 'cashout'); }}
+                          className="w-10 h-10 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg active:scale-95"
+                          title="拒绝"
+                        >
+                          <ThumbsDown size={16} />
+                        </button>
+                      </div>
+                    )}
                     {!t.isStarted && isCreator && (
                       <button
                         onClick={e => { e.stopPropagation(); handleStartTeam(t.id); }}
@@ -139,6 +172,32 @@ export default function HomeTab({
                       </button>
                     )}
                   </div>
+
+                  {isVoteOpen && proposal && (
+                    <div className={`mb-5 rounded-[2rem] p-4 border ${isCaptainDeleted ? 'border-transparent' : 'border-white/10'} ${isCaptainDeleted ? '' : 'bg-white/5'}`}>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-white/60">
+                        队长发起加码：目标 {proposal.newDays} 天
+                      </p>
+                      <p className="text-[10px] font-bold mt-1 text-white/70">
+                        规则：一票否决；24 小时未投也视为拒绝（将强制结算）
+                      </p>
+                      {isCreator && (
+                        <p className="text-[10px] font-bold mt-1 text-amber-300">
+                          你已发起投票，等待队员表态
+                        </p>
+                      )}
+                      {!isCreator && hasVoted && (
+                        <p className="text-[10px] font-bold mt-1 text-emerald-300">
+                          你已投票
+                        </p>
+                      )}
+                      {!isCreator && !hasVoted && isTimedOut && (
+                        <p className="text-[10px] font-bold mt-1 text-red-300">
+                          已超时，将按拒绝处理
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {/* Invite code (only before start and for creator) */}
                   {!t.isStarted && t.inviteCode && t.creatorId === userProfile.id && (
@@ -169,6 +228,7 @@ export default function HomeTab({
                     <div className="flex flex-wrap gap-2">
                       {t.members?.map(m => {
                         const hasCheckedIn = m.lastCheckDate === getTodayString();
+                        const isCaptain = m.id === t.creatorId;
                         return (
                           <div key={m.id} className="relative group/member">
                             <img
@@ -179,6 +239,11 @@ export default function HomeTab({
                             {hasCheckedIn && (
                               <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-400 rounded-full border-2 border-neutral-900 flex items-center justify-center">
                                 <Check size={8} className="text-neutral-900" strokeWidth={4} />
+                              </div>
+                            )}
+                            {isCaptain && (
+                              <div className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-amber-400 rounded-full border-2 border-neutral-900 flex items-center justify-center">
+                                <Crown size={8} className="text-neutral-900" />
                               </div>
                             )}
                             {/* Kick button (only creator, before start, not self) */}
@@ -212,6 +277,46 @@ export default function HomeTab({
                       />
                     </div>
                   </div>
+
+                  {/* Team check-in content */}
+                  {(() => {
+                    const teamActivities = activities
+                      .filter(a => a.habitId === t.id && a.type !== 'medal')
+                      .sort((a, b) => b.createdAt - a.createdAt)
+                      .slice(0, 5);
+                    if (teamActivities.length === 0) return null;
+                    return (
+                      <div className="mt-4 pt-4 border-t border-white/10">
+                        <p className="text-[9px] font-black text-white/40 uppercase tracking-widest mb-3">打卡动态</p>
+                        <div className="flex flex-col gap-2">
+                          {teamActivities.map(act => (
+                            <div key={act.id} className="bg-white/5 rounded-xl px-3 py-2.5">
+                              <div className="flex items-center gap-2 mb-1">
+                                <img src={act.user.avatar} className="w-5 h-5 rounded-full object-cover" referrerPolicy="no-referrer" />
+                                <span className="text-[10px] font-bold text-white/70">{act.user.name}</span>
+                                {act.user.id === t.creatorId && (
+                                  <Crown size={10} className="text-amber-400" />
+                                )}
+                                <span className="text-[9px] text-white/30 ml-auto">
+                                  {act.createdAt ? new Date(act.createdAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }) : ''}
+                                </span>
+                              </div>
+                              {act.content && (
+                                <p className="text-[11px] text-white/60 leading-relaxed">{act.content}</p>
+                              )}
+                              {act.images && act.images.length > 0 && (
+                                <div className="flex gap-1 mt-1.5">
+                                  {act.images.slice(0, 3).map((img, i) => (
+                                    <img key={i} src={img} className="w-12 h-12 rounded-lg object-cover" referrerPolicy="no-referrer" />
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="absolute top-[-30px] right-[-30px] opacity-[0.04] rotate-12 scale-150 pointer-events-none">
                   <Users size={120} strokeWidth={4} />
