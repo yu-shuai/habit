@@ -4,6 +4,9 @@
       "root": "./",
       "android": {
         "root": "android"
+      },
+      "ios": {
+        "root": "ios"
       }
     }
   ]
