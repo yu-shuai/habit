@@ -49,12 +49,18 @@ export default function MomentItem({
   const [showMenu, setShowMenu] = useState(false);
   const [showVisibilityMenu, setShowVisibilityMenu] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [showAllComments, setShowAllComments] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const commentRef = useRef<HTMLInputElement>(null);
 
   const scopedLikes = post.likedBy.filter(l => l.scope === currentScope);
   const scopedComments = post.comments.filter(c => c.scope === currentScope);
   const isLiked = scopedLikes.some(l => l.userId === currentUserProfile.id);
   const isOwner = post.user.id === currentUserProfile.id;
+
+  const COMMENTS_LIMIT = 6;
+  const visibleComments = showAllComments ? scopedComments : scopedComments.slice(0, COMMENTS_LIMIT);
+  const hasMoreComments = scopedComments.length > COMMENTS_LIMIT;
 
   const handleSubmitComment = () => {
     if (!commentText.trim()) return;
@@ -151,38 +157,8 @@ export default function MomentItem({
         </div>
       )}
 
-      {/* Likes (WeChat style) */}
-      {scopedLikes.length > 0 && (
-        <div className="flex items-start gap-2 py-2 px-3 bg-neutral-50 rounded-xl mb-2">
-          <Heart size={13} className="text-red-400 flex-shrink-0 mt-0.5" fill="currentColor" />
-          <p className="text-xs text-[#576b95] leading-relaxed">
-            {scopedLikes.map(l => l.name).join('、')}
-          </p>
-        </div>
-      )}
-
-      {/* Comments (WeChat style) */}
-      {scopedComments.length > 0 && (
-        <div className="bg-neutral-50 rounded-xl px-3 py-2 mb-2 flex flex-col gap-1.5">
-          {scopedComments.map(c => (
-            <div key={c.id} className="flex items-start gap-1.5 group">
-              <span className="text-[#576b95] text-xs font-semibold flex-shrink-0">{c.user}:</span>
-              <span className="text-xs text-neutral-700 flex-1">{c.text}</span>
-              {(c.userId === currentUserProfile.id || isOwner) && (
-                <button
-                  onClick={() => onDeleteComment(post.id, c.id)}
-                  className="opacity-0 group-hover:opacity-100 text-[10px] text-red-400 transition-opacity flex-shrink-0 ml-1"
-                >
-                  删除
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Action bar */}
-      <div className="flex items-center gap-4 mt-3">
+      {/* Action bar - 点赞和评论符号放在最上面 */}
+      <div className="flex items-center gap-4 mb-3">
         <motion.button
           whileTap={{ scale: 0.85 }}
           onClick={() => onLike(post.id, currentScope)}
@@ -211,6 +187,52 @@ export default function MomentItem({
 
         <div className="flex-1" />
       </div>
+
+      {/* Likes - 谁点了赞放在中间 */}
+      {scopedLikes.length > 0 && (
+        <div className="flex items-start gap-2 py-2 px-3 bg-neutral-50 rounded-xl mb-2">
+          <Heart size={13} className="text-red-400 flex-shrink-0 mt-0.5" fill="currentColor" />
+          <p className="text-xs text-[#576b95] leading-relaxed">
+            {scopedLikes.map(l => l.name).join('、')}
+          </p>
+        </div>
+      )}
+
+      {/* Comments - 评论内容放在最后，只显示6条其他折叠 */}
+      {scopedComments.length > 0 && (
+        <div className="bg-neutral-50 rounded-xl px-3 py-2 mb-2 flex flex-col gap-1.5">
+          {visibleComments.map(c => (
+            <div
+              key={c.id}
+              className={`flex items-start gap-1.5 group relative ${c.userId === currentUserProfile.id ? 'cursor-pointer' : ''}`}
+              onContextMenu={c.userId === currentUserProfile.id ? e => { e.preventDefault(); setDeleteTarget(prev => prev === c.id ? null : c.id); } : undefined}
+            >
+              <span className="text-[#576b95] text-xs font-semibold flex-shrink-0">{c.user}:</span>
+              <span className="text-xs text-neutral-700 flex-1">{c.text}</span>
+              {deleteTarget === c.id && (
+                <button
+                  onClick={() => { onDeleteComment(post.id, c.id); setDeleteTarget(null); }}
+                  className="absolute right-0 top-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] px-2 py-1 rounded-full"
+                >
+                  删除
+                </button>
+              )}
+              {deleteTarget === null && c.userId === currentUserProfile.id && (
+                <span className="text-[10px] text-neutral-300 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-1">长按</span>
+              )}
+            </div>
+          ))}
+          {/* 展开/折叠按钮 */}
+          {hasMoreComments && (
+            <button
+              onClick={() => setShowAllComments(!showAllComments)}
+              className="text-xs text-[#576b95] py-1 text-left hover:underline"
+            >
+              {showAllComments ? '收起' : `展开更多 ${scopedComments.length - COMMENTS_LIMIT} 条评论`}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Comment input */}
       <AnimatePresence>

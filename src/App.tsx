@@ -1,4 +1,4 @@
-import { ChangeEvent, useCallback, useEffect, useState, useMemo } from 'react';
+import { ChangeEvent, useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import Auth from './components/Auth';
 import AppContent from './components/AppContent';
@@ -98,6 +98,15 @@ export default function App() {
     setTimeout(() => setToast(null), 2200);
   }, [setToast]);
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const pullStartY = useRef<number>(0);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const isPullingRef = useRef(false);
+
+  const PULL_THRESHOLD = 60;
+  const RELEASE_THRESHOLD = 80;
+
   useReminderEffect({ dailyReminder, reminderTimes, showToast });
 
   // Data hooks
@@ -112,6 +121,7 @@ export default function App() {
       session, userProfile, setUserProfile, setUserCheckInDays,
       setIsLogoutConfirmOpen, setIsSettingsOpen,
       setIsPasswordModalOpen, setNewPassInput, newPassInput, showToast,
+      setActivities,
     });
 
   const friendActions = useFriendActions({
@@ -152,6 +162,13 @@ export default function App() {
       setCheckInHabitId, setCheckInImages, setEditingPostId,
       handleCheck, showToast,
     });
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await Promise.all([fetchHabits(), fetchActivities(), fetchFriends(), fetchFollowings(), fetchFollowers()]);
+    setIsRefreshing(false);
+    showToast('刷新成功');
+  }, [fetchHabits, fetchActivities, fetchFriends, fetchFollowings, fetchFollowers, showToast]);
 
   useEffect(() => {
     if (!session?.user?.id) return;
@@ -285,15 +302,71 @@ export default function App() {
       />
 
       {/* Main content */}
-      <div className="flex-grow">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, x: 5 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -5 }}
-            transition={{ duration: 0.2 }}
-          >
+      <div className="flex-grow relative overflow-hidden">
+        {isRefreshing && (
+          <div className="absolute top-0 left-0 right-0 z-50 flex justify-center py-3 bg-white/80 backdrop-blur-sm">
+            <div className="flex items-center gap-2 text-sm text-neutral-500">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                className="w-4 h-4 border-2 border-neutral-300 border-t-neutral-600 rounded-full"
+              />
+              刷新中...
+            </div>
+          </div>
+        )}
+        {!isRefreshing && pullDistance > 0 && (
+          <div className="absolute top-0 left-0 right-0 z-50 flex justify-center py-3 bg-white/80 backdrop-blur-sm pointer-events-none">
+            <div className="flex flex-col items-center gap-1">
+              <motion.div
+                animate={{ rotate: pullDistance >= PULL_THRESHOLD ? 180 : 0 }}
+                transition={{ duration: 0.15 }}
+                className="w-4 h-4 border-2 border-neutral-300 border-t-neutral-600 rounded-full"
+              />
+              <span className="text-xs text-neutral-400">
+                {pullDistance >= PULL_THRESHOLD ? '释放刷新' : '下拉刷新'}
+              </span>
+            </div>
+          </div>
+        )}
+        <div
+          ref={contentRef}
+          className="h-full overflow-y-auto"
+          style={{ paddingTop: isRefreshing || pullDistance > 0 ? 44 : 0 }}
+          onTouchStart={e => {
+            if (isRefreshing) return;
+            pullStartY.current = e.touches[0].clientY;
+            isPullingRef.current = false;
+          }}
+          onTouchMove={e => {
+            if (isRefreshing || !contentRef.current) return;
+            const scrollTop = contentRef.current.scrollTop;
+            const currentY = e.touches[0].clientY;
+            const diff = currentY - pullStartY.current;
+            if (diff > 0 && scrollTop === 0) {
+              e.preventDefault();
+              const distance = Math.min(diff * 0.5, RELEASE_THRESHOLD + 40);
+              setPullDistance(distance);
+              isPullingRef.current = distance >= PULL_THRESHOLD;
+            }
+          }}
+          onTouchEnd={() => {
+            if (isRefreshing) return;
+            if (isPullingRef.current && contentRef.current && contentRef.current.scrollTop === 0) {
+              handleRefresh();
+            }
+            setPullDistance(0);
+            isPullingRef.current = false;
+          }}
+        >
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, x: 5 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -5 }}
+              transition={{ duration: 0.2 }}
+            >
             <AppContent
               activeTab={activeTab}
               homeSubTab={homeSubTab} setHomeSubTab={setHomeSubTab} followings={followings}
@@ -328,8 +401,9 @@ export default function App() {
               followers={followers}
               totalLikes={totalLikes}
             />
-          </motion.div>
-        </AnimatePresence>
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </div>
 
       <BottomNav 

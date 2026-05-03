@@ -3,9 +3,6 @@ import { supabase } from '../lib/supabase';
 import { Habit, Post, UserProfile, VoteEntry, Visibility } from '../types';
 import { getMedalForDays, getTodayString } from '../utils/app';
 
-const daysBetween = (a: string, b: string) =>
-  Math.floor((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
-
 interface UseHabitActionsParams {
   session: any;
   userProfile: UserProfile;
@@ -67,12 +64,8 @@ export const useHabitActions = ({
       if (habit.isArchived || habit.isFailed || !habit.lastCheckDate) continue;
       if (habit.lastCheckDate === todayStr) continue;
 
-      const diff = daysBetween(habit.lastCheckDate, todayStr);
-      if (diff <= 0) continue;
-
       if (habit.penaltyMode) {
-        // 惩罚期内断签 → 直接失败
-        if (diff > 1) {
+        if (habit.lastCheckDate < todayStr) {
           await supabase.from('habits').update({
             is_failed: true, is_archived: true, archived_at: new Date().toISOString()
           }).eq('id', habit.id);
@@ -81,19 +74,10 @@ export const useHabitActions = ({
           showToast(`「${habit.name}」惩罚期断签，任务失败`);
         }
       } else {
-        if (diff === 1) {
-          // 断签1天 → 进入惩罚期
+        if (habit.lastCheckDate < todayStr) {
           await supabase.from('habits').update({ penalty_mode: true, penalty_days: 0 }).eq('id', habit.id);
           setTasks(prev => prev.map(t => t.id === habit.id ? { ...t, penaltyMode: true, penaltyDays: 0 } : t));
           showToast(`「${habit.name}」已进入惩罚期，需连续打卡 3 天`);
-        } else if (diff >= 2) {
-          // 断签2天+ → 失败
-          await supabase.from('habits').update({
-            is_failed: true, is_archived: true, archived_at: new Date().toISOString()
-          }).eq('id', habit.id);
-          setTasks(prev => prev.filter(t => t.id !== habit.id));
-          setCompletedTasks(prev => [{ ...habit, isFailed: true, isArchived: true }, ...prev]);
-          showToast(`「${habit.name}」连续断签，任务失败`);
         }
       }
     }

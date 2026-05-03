@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { UserProfile } from '../types';
+import { Post, UserProfile } from '../types';
 
 interface UseUserActionsParams {
   session: any;
@@ -13,6 +13,7 @@ interface UseUserActionsParams {
   setNewPassInput: (value: string) => void;
   newPassInput: string;
   showToast: (message: string) => void;
+  setActivities?: (updater: (prev: Post[]) => Post[]) => void;
 }
 
 export const useUserActions = ({
@@ -26,6 +27,7 @@ export const useUserActions = ({
   setNewPassInput,
   newPassInput,
   showToast,
+  setActivities,
 }: UseUserActionsParams) => {
   /** Fetch current user profile */
   const fetchProfile = useCallback(async () => {
@@ -74,8 +76,15 @@ export const useUserActions = ({
       if (Object.keys(dbUpdates).length === 0) return;
       await supabase.from('profiles').update(dbUpdates).eq('id', session.user.id);
       setUserProfile(prev => ({ ...prev, ...updates }));
+      if (setActivities && updates.name !== undefined) {
+        setActivities(prev => prev.map(post =>
+          post.user.id === session.user.id
+            ? { ...post, user: { ...post.user, name: updates.name! } }
+            : post
+        ));
+      }
     },
-    [session, setUserProfile]
+    [session, setUserProfile, setActivities]
   );
 
   /** Update custom ID */

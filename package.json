@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@capacitor/android": "^8.3.1",
+    "@capacitor/ios": "^8.3.1",
     "@google/genai": "^1.29.0",
     "@supabase/supabase-js": "^2.104.0",
     "@tailwindcss/vite": "^4.1.14",
