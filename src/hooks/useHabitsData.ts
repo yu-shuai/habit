@@ -1,6 +1,6 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { Habit, Post } from '../types';
+import { Habit, Post, Visibility } from '../types';
 import { getTodayString } from '../utils/app';
 
 interface UseHabitsDataParams {
@@ -8,6 +8,7 @@ interface UseHabitsDataParams {
   setTasks: (tasks: Habit[]) => void;
   setCompletedTasks: (tasks: Habit[]) => void;
   setActivities: (activities: Post[]) => void;
+  setFetchStatus?: (status: string) => void;
 }
 
 export const useHabitsData = ({
@@ -15,7 +16,10 @@ export const useHabitsData = ({
   setTasks,
   setCompletedTasks,
   setActivities,
+  setFetchStatus,
 }: UseHabitsDataParams) => {
+  const lastFetchRef = useRef<number>(0);
+
   const fetchHabits = useCallback(async () => {
     if (!userId) return;
     const { data, error } = await supabase
@@ -55,26 +59,68 @@ export const useHabitsData = ({
     }
   }, [userId, setTasks, setCompletedTasks]);
 
-  const fetchActivities = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('activities')
-      .select('*')
-      .order('created_at', { ascending: false });
+  const fetchActivities = useCallback(async (offset = 0, limit = 20) => {
+    if (!userId) return;
+    
+    const now = Date.now();
+    if (offset === 0 && now - lastFetchRef.current < 1000) return;
+    if (offset === 0) lastFetchRef.current = now;
 
-    if (data) {
-      setActivities(
-        data.map(a => ({
-          ...a,
+    try {
+      setFetchStatus?.('fetching...');
+
+      // 1. Get own activities (limit 50 for performance if offset > 0)
+      const lightCols = 'id,habit_id,user_id,user,images,tag,liked_by,comments,visibility,content,created_at';
+      
+      const { data: rawData, error } = await supabase
+        .from('activities')
+        .select(lightCols)
+        .or(`visibility.eq.public,user_id.eq.${userId}`)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      if (error) {
+        console.error('fetchActivities error:', error.message);
+        setFetchStatus?.(`error: ${error.message}`);
+        return;
+      }
+
+      const mapped: Post[] = (rawData || []).map(a => {
+        const dateStr = a.created_at ? String(a.created_at).replace(' ', 'T') : null;
+        const ts = dateStr ? new Date(dateStr).getTime() : Date.now();
+        
+        return {
+          id: String(a.id),
+          habitId: a.habit_id ? String(a.habit_id).trim() : '',
+          user: a.user || { id: a.user_id, name: '未知用户', avatar: '' },
+          images: a.images || [],
+          tag: a.tag || '',
           likedBy: a.liked_by || [],
-          habitId: a.habit_id,
-          createdAt: new Date(a.created_at).getTime(),
-          type: a.type || undefined,
-        }))
-      );
-    } else if (error) {
-      console.error('fetchActivities:', error.message);
+          comments: a.comments || [],
+          visibility: String(a.visibility || 'public').trim().toLowerCase() as Visibility,
+          content: a.content || '',
+          createdAt: isNaN(ts) ? Date.now() : ts,
+          type: undefined,
+        };
+      });
+
+      if (offset === 0) {
+        setActivities(mapped);
+      } else {
+        setActivities((prev: Post[]) => {
+          const existingIds = new Set(prev.map(p => p.id));
+          const newOnes = mapped.filter(m => !existingIds.has(m.id));
+          return [...prev, ...newOnes].sort((a, b) => b.createdAt - a.createdAt);
+        });
+      }
+      
+      setFetchStatus?.(`ok: ${mapped.length}`);
+    } catch (err: any) {
+      console.error('fetchActivities unexpected error:', err);
+      setFetchStatus?.(`crash: ${err?.message || 'unknown'}`);
     }
-  }, [setActivities]);
+  }, [userId, setActivities]);
 
   return { fetchHabits, fetchActivities };
+
 };

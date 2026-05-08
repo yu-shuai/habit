@@ -27,6 +27,7 @@ interface UseHabitActionsParams {
   setUserCheckInDays: (updater: (prev: number) => number) => void;
   setShowFireworks: (show: boolean) => void;
   showToast: (message: string) => void;
+  setHabitLogs: (updater: (prev: any[]) => any[]) => void;
 }
 
 
@@ -55,17 +56,19 @@ export const useHabitActions = ({
   setUserCheckInDays,
   setShowFireworks,
   showToast,
+  setHabitLogs,
 }: UseHabitActionsParams) => {
 
   /** ─── 检查每个任务是否断签，更新惩罚/失败状态 ─── */
   const checkAndUpdateStreaks = useCallback(async (currentTasks: Habit[]) => {
     const todayStr = getTodayString();
+    const yesterdayStr = new Date(Date.now() - 86400000).toISOString().split('T')[0];
     for (const habit of currentTasks) {
       if (habit.isArchived || habit.isFailed || !habit.lastCheckDate) continue;
       if (habit.lastCheckDate === todayStr) continue;
 
       if (habit.penaltyMode) {
-        if (habit.lastCheckDate < todayStr) {
+        if (habit.lastCheckDate < yesterdayStr) {
           await supabase.from('habits').update({
             is_failed: true, is_archived: true, archived_at: new Date().toISOString()
           }).eq('id', habit.id);
@@ -74,7 +77,7 @@ export const useHabitActions = ({
           showToast(`「${habit.name}」惩罚期断签，任务失败`);
         }
       } else {
-        if (habit.lastCheckDate < todayStr) {
+        if (habit.lastCheckDate < yesterdayStr) {
           await supabase.from('habits').update({ penalty_mode: true, penalty_days: 0 }).eq('id', habit.id);
           setTasks(prev => prev.map(t => t.id === habit.id ? { ...t, penaltyMode: true, penaltyDays: 0 } : t));
           showToast(`「${habit.name}」已进入惩罚期，需连续打卡 3 天`);
@@ -87,9 +90,6 @@ export const useHabitActions = ({
   const handleCheck = useCallback(async (id: string, skipAutoPost = false) => {
     const habit = tasks.find(t => t.id === id);
     if (!habit || habit.isFailed) return;
-    // Allow "settlement/claim" click even if the habit was completed today.
-    // Only block duplicate check-ins when the goal is not yet reached.
-    if (habit.isCompletedToday && habit.currentProgress < habit.totalDays) return;
 
     if (habit.currentProgress >= habit.totalDays) {
       if (habit.type === 'team' && habit.creatorId !== session?.user?.id) {
@@ -121,6 +121,11 @@ export const useHabitActions = ({
       completed_date: todayStr,
     });
     setUserCheckInDays(prev => prev + 1);
+    setHabitLogs(prev => [...prev, { 
+      habit_id: id, 
+      user_id: session?.user?.id, 
+      completed_date: todayStr 
+    }]);
 
     // 标记当前用户今日已打卡
     const updatedMembers = habit.members?.map(m => 
@@ -165,6 +170,7 @@ export const useHabitActions = ({
         const remaining = (updatedMembers || []).filter(m => m.lastCheckDate !== todayStr).length;
         showToast(`已打卡！还差 ${remaining} 人`);
       }
+      setShowFireworks(true);
     } else {
       // 个人任务：处理惩罚期逻辑
       let newProgress = habit.currentProgress;
@@ -205,18 +211,29 @@ export const useHabitActions = ({
       if (!newPenaltyMode && newProgress >= habit.totalDays) {
         showToast('🎉 任务完成！点击卡片进行结算');
       }
+      
+      // 触发庆祝动效
+      setShowFireworks(true);
     }
 
     if (!skipAutoPost) {
       const visibility = habit.type === 'team' ? 'friends' : 'private';
-      const dayNumber = habit.currentProgress + 1;
-      const autoPostId = `auto-${id}-${todayStr}`;
+      // 统一使用进度作为天数，确保与 UI 和手动打卡逻辑一致
+      const isTeam = habit.type === 'team';
+      const allMembersChecked = isTeam && (habit.members?.every(m => 
+        m.id === session?.user?.id ? true : m.lastCheckDate === todayStr
+      ));
+      const dayNumber = isTeam 
+        ? (allMembersChecked ? habit.currentProgress + 1 : habit.currentProgress || 1)
+        : newProgress;
+
+      const autoPostId = `auto-${id}-${userProfile.id}-${todayStr}`;
       const autoPost: Post = {
         id: autoPostId,
         habitId: id,
         user: { id: userProfile.id, name: userProfile.name, avatar: userProfile.avatar },
         images: [],
-        tag: habit.name,
+        tag: `${habit.name} · 第${dayNumber}天`,
         likedBy: [],
         comments: [],
         visibility: visibility as Visibility,
@@ -479,7 +496,7 @@ export const useHabitActions = ({
   const handleAddTask = useCallback(async () => {
     if (!taskName.trim()) return;
     const newTask: Habit = {
-      id: Math.random().toString(36).substring(2, 15),
+      id: crypto.randomUUID(),
       name: taskName,
       totalDays: taskDays,
       currentProgress: 0,
@@ -488,7 +505,7 @@ export const useHabitActions = ({
       isCompletedToday: false,
       creatorId: userProfile.id,
       inviteCode: taskType === 'team'
-        ? Math.random().toString(36).substring(2, 8).toUpperCase()
+        ? crypto.randomUUID().substring(0, 6).toUpperCase()
         : undefined,
       members: taskType === 'team'
         ? [{ id: userProfile.id, name: userProfile.name, avatar: userProfile.avatar }]
@@ -500,7 +517,7 @@ export const useHabitActions = ({
     setTaskName('');
     setIsModalOpen(false);
 
-    await supabase.from('habits').insert({
+    const { error } = await supabase.from('habits').insert({
       id: newTask.id,
       user_id: session.user.id,
       name: newTask.name,
@@ -515,7 +532,12 @@ export const useHabitActions = ({
       is_started: newTask.isStarted,
       is_archived: false,
     });
-  }, [session, userProfile, taskName, taskDays, taskType, setTasks, setTaskName, setIsModalOpen]);
+    if (error) {
+      // Rollback optimistic update
+      setTasks(prev => prev.filter(t => t.id !== newTask.id));
+      showToast('创建任务失败，请重试');
+    }
+  }, [session, userProfile, taskName, taskDays, taskType, setTasks, setTaskName, setIsModalOpen, showToast]);
 
   /** ─── 加入团队 ─── */
   const handleJoinTeam = useCallback(async () => {
@@ -544,13 +566,19 @@ export const useHabitActions = ({
       ...(teamTask.members || []),
       { id: userProfile.id, name: userProfile.name, avatar: userProfile.avatar },
     ];
+    const prevTasks = [...tasks];
     setTasks(prev => {
       const exists = prev.find(t => t.id === teamTask!.id);
       return exists
         ? prev.map(t => t.id === teamTask!.id ? { ...t, members: updatedMembers } : t)
         : [{ ...teamTask!, members: updatedMembers }, ...prev];
     });
-    await supabase.from('habits').update({ members: updatedMembers }).eq('id', teamTask.id);
+    const { error } = await supabase.from('habits').update({ members: updatedMembers }).eq('id', teamTask.id);
+    if (error) {
+      setTasks(() => prevTasks);
+      showToast('加入团队失败，请重试');
+      return;
+    }
     setJoinCode('');
     showToast('成功加入团队');
   }, [joinCode, tasks, userProfile, setTasks, setJoinCode, showToast]);
@@ -560,7 +588,14 @@ export const useHabitActions = ({
     setTasks(prev => prev.map(t =>
       t.id === teamId ? { ...t, isStarted: true, inviteCode: '' } : t
     ));
-    await supabase.from('habits').update({ is_started: true, invite_code: null }).eq('id', teamId);
+    const { error } = await supabase.from('habits').update({ is_started: true, invite_code: null }).eq('id', teamId);
+    if (error) {
+      setTasks(prev => prev.map(t =>
+        t.id === teamId ? { ...t, isStarted: false } : t
+      ));
+      showToast('开始挑战失败，请重试');
+      return;
+    }
     showToast('🚀 挑战已开始，同生共死！');
   }, [setTasks, showToast]);
 
@@ -570,7 +605,12 @@ export const useHabitActions = ({
     if (!habit) return;
     const updatedMembers = habit.members?.filter(m => m.id !== memberId) || [];
     setTasks(prev => prev.map(t => t.id === teamId ? { ...t, members: updatedMembers } : t));
-    await supabase.from('habits').update({ members: updatedMembers }).eq('id', teamId);
+    const { error } = await supabase.from('habits').update({ members: updatedMembers }).eq('id', teamId);
+    if (error) {
+      setTasks(prev => prev.map(t => t.id === teamId ? { ...t, members: habit.members } : t));
+      showToast('移除成员失败，请重试');
+      return;
+    }
     showToast('成员已移除');
   }, [tasks, setTasks, showToast]);
 

@@ -1,43 +1,55 @@
 import { useState } from 'react';
+import { useAppStore } from '../../store/useAppStore';
+import { useHabitStore, useActivityStore } from '../../store/useContentStore';
 import MomentItem from '../MomentItem';
 import FollowingTab from './FollowingTab';
 import { AnimatePresence, motion } from 'motion/react';
 import { Copy, Check, Users, X, ThumbsDown, ThumbsUp, Crown } from 'lucide-react';
-import { Habit, HomeSubTab, Post, UserProfile, Visibility, InteractionScope } from '../../types';
+import { HomeSubTab, Visibility, InteractionScope } from '../../types';
 import { copyToClipboard, getTodayString } from '../../utils/app';
+import { MomentItemSkeleton, HabitCardSkeleton } from '../Skeleton';
+
 
 interface HomeTabProps {
   homeSubTab: HomeSubTab;
   setHomeSubTab: (tab: HomeSubTab) => void;
-  activities: Post[];
-  tasks: Habit[];
-  userProfile: UserProfile;
-  followings: string[];
   joinCode: string;
   setJoinCode: (code: string) => void;
   handleJoinTeam: () => void;
   handleStartTeam: (teamId: string) => void;
   handleKickMember: (teamId: string, memberId: string) => void;
-  setSelectedTaskDetails: (task: Habit | null) => void;
   handleLike: (id: string, scope?: InteractionScope) => void;
   handleAddComment: (postId: string, text: string, scope?: InteractionScope) => void;
   handleDeleteComment: (postId: string, commentId: string) => void;
   handleChangeVisibility: (postId: string, visibility: Visibility) => void;
-  setSelectedPost: (post: Post | null) => void;
-  showToast: (message: string) => void;
+  handleDeletePost?: (postId: string) => void;
+  handleEditPost?: (postId: string) => void;
   handleTeamVote?: (habitId: string, choice: 'continue' | 'cashout', newDays?: number) => void;
+  onViewProfile: (userId: string) => void;
+  fetchStatus?: string;
+  onLoadMore?: () => void;
 }
+
 
 export default function HomeTab({
   homeSubTab, setHomeSubTab,
-  activities, tasks, userProfile, followings,
   joinCode, setJoinCode,
   handleJoinTeam, handleStartTeam, handleKickMember,
-  setSelectedTaskDetails,
-  handleLike, handleAddComment, handleDeleteComment, handleChangeVisibility,
-  setSelectedPost, showToast,
+  handleLike, handleAddComment, handleDeleteComment, handleChangeVisibility, handleDeletePost, handleEditPost,
   handleTeamVote,
+  onViewProfile,
+  fetchStatus,
+  onLoadMore,
 }: HomeTabProps) {
+
+  const { userProfile, followings, toast, setToast } = useAppStore();
+  const { tasks, setSelectedTaskDetails } = useHabitStore();
+  const { activities, setSelectedPost } = useActivityStore();
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2000);
+  };
   const [kickTarget, setKickTarget] = useState<{ teamId: string; memberId: string; memberName: string } | null>(null);
 
   const TABS: { id: HomeSubTab; label: string }[] = [
@@ -66,18 +78,33 @@ export default function HomeTab({
       {/* Discovery */}
       {homeSubTab === 'discovery' && (
         <div className="flex flex-col pb-10">
-          {activities.filter(a => a.visibility === 'public').map(post => (
-            <MomentItem
-              key={post.id} post={post}
-              onLike={handleLike} onAddComment={handleAddComment}
-              onDeleteComment={handleDeleteComment} onChangeVisibility={handleChangeVisibility}
-              onViewDetail={setSelectedPost} currentUserProfile={userProfile} currentScope="public"
-            />
-          ))}
-          {activities.filter(a => a.visibility === 'public').length === 0 && (
+          {fetchStatus === 'fetching...' ? (
+            Array(3).fill(0).map((_, i) => <div key={i} className="px-5 mb-6"><MomentItemSkeleton /></div>)
+          ) : (
+            activities.filter(a => a.visibility === 'public').map(post => (
+              <MomentItem
+                post={post}
+                onLike={handleLike} onAddComment={handleAddComment}
+                onDeleteComment={handleDeleteComment} onChangeVisibility={handleChangeVisibility}
+                onDeletePost={handleDeletePost}
+                onEditPost={handleEditPost}
+                onViewDetail={setSelectedPost} onViewProfile={onViewProfile} currentUserProfile={userProfile} currentScope="public"
+              />
+            ))
+          )}
+
+          {activities.filter(a => a.visibility === 'public').length === 0 && fetchStatus !== 'fetching...' && (
             <div className="py-24 text-center">
               <p className="text-[10px] font-black tracking-[0.4em] uppercase text-neutral-300 italic">广场暂无动态</p>
             </div>
+          )}
+          {activities.filter(a => a.visibility === 'public').length > 0 && fetchStatus !== 'fetching...' && (
+            <button
+              onClick={onLoadMore}
+              className="mt-6 mx-auto bg-neutral-100 text-neutral-400 px-6 py-3 rounded-full font-headline font-black text-[10px] uppercase tracking-widest active:scale-95 transition-transform"
+            >
+              加载更多
+            </button>
           )}
         </div>
       )}
@@ -88,13 +115,21 @@ export default function HomeTab({
           activities={activities} followings={followings} userProfile={userProfile}
           onLike={handleLike} onAddComment={handleAddComment}
           onDeleteComment={handleDeleteComment} onChangeVisibility={handleChangeVisibility}
+          onDeletePost={handleDeletePost}
+          onEditPost={handleEditPost}
           setSelectedPost={setSelectedPost}
+          onViewProfile={onViewProfile}
         />
       )}
 
-      {/* Team */}
-      {homeSubTab === 'team' && (
-        <div className="flex flex-col gap-8 px-5 pt-5 pb-12">
+       {/* Team */}
+       {homeSubTab === 'team' && (
+         <div className="flex flex-col gap-8 px-5 pt-5 pb-12">
+           {fetchStatus === 'fetching...' ? (
+             Array(2).fill(0).map((_, i) => <HabitCardSkeleton key={i} />)
+           ) : (
+             <>
+
           {/* Join code input */}
           <div className="bg-neutral-50 p-5 rounded-[2rem] flex flex-col gap-3 border border-dashed border-neutral-200">
             <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">加入挑战小队</p>
@@ -335,8 +370,11 @@ export default function HomeTab({
               </p>
             </div>
           )}
-        </div>
+        </>
       )}
+    </div>
+  )}
+
 
       {/* Kick member confirm modal */}
       <AnimatePresence>

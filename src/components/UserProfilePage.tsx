@@ -11,11 +11,14 @@ interface UserProfilePageProps {
   onClose: () => void;
   activities: Post[];
   isFollowing: boolean;
+  isFriend: boolean;
   onFollow: (userId: string) => void;
   onLike: (id: string, scope?: InteractionScope) => void;
   onAddComment: (postId: string, text: string, scope?: InteractionScope) => void;
   onDeleteComment: (postId: string, commentId: string) => void;
   onChangeVisibility: (postId: string, visibility: Visibility) => void;
+  onDeletePost?: (postId: string) => void;
+  onEditPost?: (postId: string) => void;
   onViewDetail: (post: Post) => void;
   currentUserProfile: UserProfile;
   onSendFriendRequest: (userId: string, message?: string) => void;
@@ -27,11 +30,14 @@ export default function UserProfilePage({
   onClose,
   activities,
   isFollowing,
+  isFriend,
   onFollow,
   onLike,
   onAddComment,
   onDeleteComment,
   onChangeVisibility,
+  onDeletePost,
+  onEditPost,
   onViewDetail,
   currentUserProfile,
   onSendFriendRequest,
@@ -176,13 +182,22 @@ export default function UserProfilePage({
                           {isFollowing ? <UserCheck size={16} /> : <UserPlus size={16} />}
                           {isFollowing ? '已关注' : '关注'}
                         </motion.button>
-                        <motion.button
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => setIsAddingFriend(true)}
-                          className="flex-1 py-3 rounded-2xl font-headline font-black text-sm bg-neutral-100 text-neutral-700 flex items-center justify-center gap-2"
-                        >
-                          加好友
-                        </motion.button>
+                        {isFriend ? (
+                          <button
+                            disabled
+                            className="flex-1 py-3 rounded-2xl font-headline font-black text-sm bg-neutral-100 text-neutral-400 flex items-center justify-center gap-2 cursor-not-allowed"
+                          >
+                            已是好友
+                          </button>
+                        ) : (
+                          <motion.button
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => setIsAddingFriend(true)}
+                            className="flex-1 py-3 rounded-2xl font-headline font-black text-sm bg-neutral-100 text-neutral-700 flex items-center justify-center gap-2"
+                          >
+                            加好友
+                          </motion.button>
+                        )}
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -197,12 +212,13 @@ export default function UserProfilePage({
               {userPosts.length > 0 ? (
                 userPosts.map(post => (
                   <MomentItem
-                    key={post.id}
                     post={post}
                     onLike={onLike}
                     onAddComment={onAddComment}
                     onDeleteComment={onDeleteComment}
                     onChangeVisibility={onChangeVisibility}
+                    onDeletePost={onDeletePost}
+                    onEditPost={onEditPost}
                     onViewDetail={onViewDetail}
                     currentUserProfile={currentUserProfile}
                     currentScope="public"

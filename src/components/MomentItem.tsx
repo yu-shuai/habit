@@ -9,7 +9,10 @@ interface MomentItemProps {
   onAddComment: (postId: string, text: string, scope?: InteractionScope) => void;
   onDeleteComment: (postId: string, commentId: string) => void;
   onChangeVisibility: (postId: string, visibility: Visibility) => void;
+  onDeletePost?: (postId: string) => void;
+  onEditPost?: (postId: string) => void;
   onViewDetail?: (post: Post | null) => void;
+  onViewProfile?: (userId: string) => void;
   currentUserProfile: UserProfile;
   currentScope?: InteractionScope;
   allowedScopes?: InteractionScope[];
@@ -41,6 +44,9 @@ export default function MomentItem({
   onDeleteComment,
   onChangeVisibility,
   onViewDetail,
+  onViewProfile,
+  onDeletePost,
+  onEditPost,
   currentUserProfile,
   currentScope = 'public',
 }: MomentItemProps) {
@@ -76,8 +82,11 @@ export default function MomentItem({
     if (m < 60) return `${m}分钟前`;
     const h = Math.floor(m / 60);
     if (h < 24) return `${h}小时前`;
-    return `${Math.floor(h / 24)}天前`;
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
+
+  const isCreatedToday = new Date(post.createdAt).toDateString() === new Date().toDateString();
 
   return (
     <div className="px-5 py-5 border-b border-neutral-100">
@@ -85,8 +94,9 @@ export default function MomentItem({
       <div className="flex items-start gap-3 mb-3">
         <img
           src={post.user.avatar}
-          className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+          className="w-10 h-10 rounded-full object-cover flex-shrink-0 cursor-pointer"
           referrerPolicy="no-referrer"
+          onClick={() => onViewProfile?.(post.user.id ?? '')}
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -117,11 +127,30 @@ export default function MomentItem({
                   className="absolute right-0 top-8 bg-white rounded-2xl shadow-xl border border-neutral-100 z-50 min-w-[130px] overflow-hidden"
                   onClick={e => e.stopPropagation()}
                 >
+                  {isCreatedToday && (
+                    <button
+                      onClick={() => { setShowMenu(false); onEditPost?.(post.id); }}
+                      className="w-full px-4 py-3 text-left text-sm font-medium hover:bg-neutral-50"
+                    >
+                      修改内容
+                    </button>
+                  )}
                   <button
                     onClick={() => { setShowVisibilityMenu(true); setShowMenu(false); }}
                     className="w-full px-4 py-3 text-left text-sm font-medium hover:bg-neutral-50"
                   >
                     修改权限
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      if (window.confirm('确定要删除这条动态吗？')) {
+                        onDeletePost?.(post.id);
+                      }
+                    }}
+                    className="w-full px-4 py-3 text-left text-sm font-medium text-red-500 hover:bg-red-50"
+                  >
+                    删除动态
                   </button>
                 </motion.div>
               )}
@@ -129,6 +158,7 @@ export default function MomentItem({
           </div>
         )}
       </div>
+
 
       {/* Content */}
       {post.content && (

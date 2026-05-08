@@ -1,35 +1,41 @@
 import { AnimatePresence, motion } from 'motion/react';
+import { useAppStore } from '../../store/useAppStore';
+import { useActivityStore } from '../../store/useContentStore';
 import MomentItem from '../MomentItem';
 import FriendRequestList from './FriendRequestList';
-import { Post, FriendSubTab, InteractionScope, Visibility, UserProfile } from '../../types';
+import { FriendSubTab, InteractionScope, Visibility } from '../../types';
+import { MomentItemSkeleton } from '../Skeleton';
 
 interface FriendsTabProps {
   friendSubTab: FriendSubTab;
   setFriendSubTab: (tab: FriendSubTab) => void;
-  activities: Post[];
-  friends: any[];
-  friendRequests: any[];
-  userProfile: UserProfile;
   handleLike: (id: string, scope?: InteractionScope) => void;
   handleAddComment: (postId: string, text: string, scope?: InteractionScope) => void;
   handleDeleteComment: (postId: string, commentId: string) => void;
   handleChangeVisibility: (postId: string, visibility: Visibility) => void;
-  setSelectedPost: (post: Post | null) => void;
+  handleDeletePost?: (postId: string) => void;
+  handleEditPost?: (postId: string) => void;
   onAcceptRequest: (id: string) => void;
   onRejectRequest: (id: string) => void;
   onViewProfile: (userId: string) => void;
   hasNewFriendPosts?: boolean;
+  fetchStatus?: string;
+  onLoadMore?: () => void;
 }
+
 
 export default function FriendsTab({
   friendSubTab, setFriendSubTab,
-  activities, friends, friendRequests,
-  userProfile,
-  handleLike, handleAddComment, handleDeleteComment, handleChangeVisibility,
-  setSelectedPost,
+  handleLike, handleAddComment, handleDeleteComment, handleChangeVisibility, handleDeletePost, handleEditPost,
   onAcceptRequest, onRejectRequest, onViewProfile,
   hasNewFriendPosts,
+  fetchStatus,
+  onLoadMore,
 }: FriendsTabProps) {
+
+  const { userProfile, friends, friendRequests } = useAppStore();
+  const { activities, setSelectedPost } = useActivityStore();
+
   const friendIds = new Set(friends.map((f: any) => f.id));
   const currentUserId = userProfile.id;
 
@@ -82,27 +88,41 @@ export default function FriendsTab({
             exit={{ opacity: 0, x: 10 }}
             className="flex flex-col gap-6"
           >
-            {friendPosts.length > 0 ? (
-              friendPosts.map(post => (
-                <MomentItem
-                  key={post.id}
-                  post={post}
-                  onLike={handleLike}
-                  onAddComment={handleAddComment}
-                  onDeleteComment={handleDeleteComment}
-                  onChangeVisibility={handleChangeVisibility}
-                  onViewDetail={setSelectedPost}
-                  currentUserProfile={userProfile}
-                  currentScope="friends"
-                  showScopeSelector={false}
-                />
-              ))
+            {fetchStatus === 'fetching...' ? (
+              Array(3).fill(0).map((_, i) => <MomentItemSkeleton key={i} />)
             ) : (
-              <div className="py-20 text-center opacity-30">
-                <p className="text-[10px] font-black uppercase tracking-[0.4em] italic leading-relaxed">
-                  暂无好友动态<br />去添加好友吧
-                </p>
-              </div>
+              friendPosts.length > 0 ? (
+                friendPosts.map(post => (
+                  <MomentItem
+                    post={post}
+                    onLike={handleLike}
+                    onAddComment={handleAddComment}
+                    onDeleteComment={handleDeleteComment}
+                    onChangeVisibility={handleChangeVisibility}
+                    onDeletePost={handleDeletePost}
+                    onEditPost={handleEditPost}
+                    onViewDetail={setSelectedPost}
+                    onViewProfile={onViewProfile}
+                    currentUserProfile={userProfile}
+                    currentScope="friends"
+                    showScopeSelector={false}
+                  />
+                ))
+              ) : (
+                <div className="py-20 text-center opacity-30">
+                  <p className="text-[10px] font-black uppercase tracking-[0.4em] italic leading-relaxed">
+                    暂无好友动态<br />去添加好友吧
+                  </p>
+                </div>
+              )
+            )}
+            {friendPosts.length > 0 && fetchStatus !== 'fetching...' && (
+              <button
+                onClick={onLoadMore}
+                className="mt-6 mx-auto bg-neutral-100 text-neutral-400 px-6 py-3 rounded-full font-headline font-black text-[10px] uppercase tracking-widest active:scale-95 transition-transform"
+              >
+                加载更多
+              </button>
             )}
           </motion.div>
         ) : (

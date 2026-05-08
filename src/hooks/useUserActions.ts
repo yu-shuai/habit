@@ -74,17 +74,26 @@ export const useUserActions = ({
       if (updates.name !== undefined) dbUpdates.name = updates.name.trim();
       if (updates.avatar !== undefined) dbUpdates.avatar = updates.avatar;
       if (Object.keys(dbUpdates).length === 0) return;
-      await supabase.from('profiles').update(dbUpdates).eq('id', session.user.id);
+      const { error } = await supabase.from('profiles').update(dbUpdates).eq('id', session.user.id);
+      if (error) { showToast('更新失败，请重试'); return; }
       setUserProfile(prev => ({ ...prev, ...updates }));
-      if (setActivities && updates.name !== undefined) {
+      // #7: Sync both name and avatar to existing activities
+      if (setActivities && (updates.name !== undefined || updates.avatar !== undefined)) {
         setActivities(prev => prev.map(post =>
           post.user.id === session.user.id
-            ? { ...post, user: { ...post.user, name: updates.name! } }
+            ? {
+                ...post,
+                user: {
+                  ...post.user,
+                  ...(updates.name !== undefined ? { name: updates.name } : {}),
+                  ...(updates.avatar !== undefined ? { avatar: updates.avatar } : {}),
+                },
+              }
             : post
         ));
       }
     },
-    [session, setUserProfile, setActivities]
+    [session, setUserProfile, setActivities, showToast]
   );
 
   /** Update custom ID */
@@ -114,12 +123,17 @@ export const useUserActions = ({
     showToast('已退出登录');
   }, [setIsLogoutConfirmOpen, setIsSettingsOpen, showToast]);
 
-  /** Delete account */
+  /** Delete account
+   * NOTE (#2): This only deletes user data from public tables and signs out.
+   * The auth.users record cannot be deleted from client-side code.
+   * To fully remove the auth user, deploy a Supabase Edge Function that calls
+   * supabase.auth.admin.deleteUser(userId). */
   const handleDeleteAccount = useCallback(async () => {
     if (!session?.user?.id) return;
-    // Delete user data
+    // Delete user data from all public tables
     await supabase.from('activities').delete().eq('user_id', session.user.id);
     await supabase.from('habits').delete().eq('user_id', session.user.id);
+    await supabase.from('follows').delete().or(`follower_id.eq.${session.user.id},following_id.eq.${session.user.id}`);
     await supabase.from('friendships').delete().or(`requester_id.eq.${session.user.id},receiver_id.eq.${session.user.id}`);
     await supabase.from('profiles').delete().eq('id', session.user.id);
     await supabase.auth.signOut();

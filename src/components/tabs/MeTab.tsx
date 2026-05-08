@@ -1,7 +1,10 @@
 import { motion, AnimatePresence } from 'motion/react';
+import { useAppStore } from '../../store/useAppStore';
+import { useHabitStore, useActivityStore } from '../../store/useContentStore';
 import { Camera, Flame, Lock, CheckSquare, Users, Clock, Calendar, ChevronLeft, X, Award, UserMinus, Notebook, Crown } from 'lucide-react';
 import { ChangeEvent, useCallback, useMemo, useState } from 'react';
-import { Habit, Post, UserProfile } from '../../types';
+import { Habit } from '../../types';
+import { MeTabSkeleton } from '../Skeleton';
 
 // Completed task card with delete button (same pattern as HabitCard)
 function CompletedTaskCard({
@@ -73,12 +76,6 @@ function CompletedTaskCard({
 }
 
 interface MeTabProps {
-  userProfile: UserProfile;
-  tasks: Habit[];
-  completedTasks: Habit[];
-  activities?: Post[];
-  friends: any[];
-  userCheckInDays: number;
   isEditingName: boolean;
   setIsEditingName: (editing: boolean) => void;
   isEditingId: boolean;
@@ -86,18 +83,17 @@ interface MeTabProps {
   tasksSubTab: 'ongoing' | 'completed';
   setTasksSubTab: (tab: 'ongoing' | 'completed') => void;
   handleImageUpload: (e: ChangeEvent<HTMLInputElement>, callback: (url: string) => void) => void;
-  setUserProfile: (updater: (prev: UserProfile) => UserProfile) => void;
   updateProfile: (updates: Partial<{ name: string; avatar: string }>) => Promise<void>;
   updateProfileId: (newId: string) => Promise<void>;
   setSelectedMedal: (medal: { days: number; taskName: string } | null) => void;
-  setSelectedTaskDetails: (task: Habit | null) => void;
   onViewProfile: (userId: string) => void;
   showToast: (message: string) => void;
   handleDelete?: (id: string) => void;
   onDeleteFriend?: (friendId: string) => void;
   onClaimReward?: (habit: Habit) => void;
-  followers: any[];
   totalLikes: number;
+  fetchStatus?: string;
+  onRefreshLogs?: () => void;
 }
 
 const badgeIconForDays = (days: number) => {
@@ -109,27 +105,22 @@ const badgeIconForDays = (days: number) => {
   return 'emoji_events';
 };
 
-const completedIconForDays = (days: number) => {
-  if (days <= 7) return '🔥';
-  if (days <= 30) return '⚡';
-  if (days <= 90) return '🌟';
-  if (days <= 180) return '💎';
-  if (days <= 365) return '🏆';
-  return '👑';
-};
-
 export default function MeTab({
-  userProfile, tasks, completedTasks, friends, userCheckInDays,
-  activities,
   isEditingName, setIsEditingName,
   isEditingId, setIsEditingId,
   tasksSubTab, setTasksSubTab,
-  handleImageUpload, setUserProfile, updateProfile, updateProfileId,
-  setSelectedMedal, setSelectedTaskDetails, onViewProfile,
+  handleImageUpload, updateProfile, updateProfileId,
+  setSelectedMedal, onViewProfile,
   showToast, handleDelete, onDeleteFriend,
   onClaimReward,
-  followers, totalLikes,
+  totalLikes,
+  fetchStatus,
+  onRefreshLogs,
 }: MeTabProps) {
+  const { userProfile, setUserProfile, friends, followers } = useAppStore();
+
+  const { tasks, completedTasks, setSelectedTaskDetails } = useHabitStore();
+  const { activities } = useActivityStore();
   const currentList = tasksSubTab === 'ongoing' ? tasks : completedTasks;
   const [isFriendsListOpen, setIsFriendsListOpen] = useState(false);
   const [isFollowersListOpen, setIsFollowersListOpen] = useState(false);
@@ -148,6 +139,10 @@ export default function MeTab({
   const hasClaimedReward = useCallback((habitId: string) => {
     return earnedMedals.some(m => m.habitId === habitId);
   }, [earnedMedals]);
+
+  if (fetchStatus === 'fetching...' && !userProfile.id) {
+    return <MeTabSkeleton />;
+  }
 
   return (
     <div className="flex flex-col pb-32">
@@ -223,7 +218,9 @@ export default function MeTab({
         </div>
       </div>
 
-      <div className="px-6 flex flex-col gap-6 mt-4">
+
+      <div className="px-6 flex flex-col gap-6 mt-10">
+
         <div className="flex justify-between items-baseline">
           <h3 className="font-sans font-extrabold text-xl tracking-wider text-neutral-900">勋章墙</h3>
         </div>
@@ -282,7 +279,6 @@ export default function MeTab({
               const claimed = hasClaimedReward(t.id);
               return (
                 <CompletedTaskCard
-                  key={t.id}
                   task={t}
                   claimed={claimed}
                   completedDate={completedDate}
@@ -333,6 +329,68 @@ export default function MeTab({
           )}
         </div>
       </div>
+
+      {(() => {
+        const allHabitIds = new Set([
+          ...tasks.map(t => t.id),
+          ...completedTasks.map(t => t.id),
+        ]);
+        const orphanActivities = (activities || [])
+          .filter(a => {
+            const hid = a.habitId || '';
+            if (hid === '' || hid === 'null' || hid === 'undefined') return false;
+            return !allHabitIds.has(hid) && a.type !== 'medal' && a.user?.id === userProfile.id;
+          })
+          .sort((a, b) => b.createdAt - a.createdAt);
+
+        if (orphanActivities.length === 0) return null;
+
+        const grouped = orphanActivities.reduce<Record<string, typeof orphanActivities>>((acc, a) => {
+          const key = a.tag?.split('·')[0]?.trim() || a.tag || '未知任务';
+          if (!acc[key]) acc[key] = [];
+          acc[key].push(a);
+          return acc;
+        }, {});
+
+        return (
+          <div className="px-6 flex flex-col gap-5 mt-10 pb-12">
+            <h3 className="font-headline font-black text-lg tracking-widest italic uppercase">历史打卡</h3>
+            <p className="text-[10px] text-neutral-400 font-bold">以下任务已删除，但打卡记录仍保留</p>
+            <div className="flex flex-col gap-6">
+              {Object.entries(grouped).map(([taskName, logs]) => (
+                <div key={taskName} className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-headline font-black text-sm italic tracking-tighter text-neutral-700">{taskName}</span>
+                    <span className="text-[9px] font-black text-neutral-300 uppercase tracking-widest">{logs.length} 条记录</span>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {logs.slice(0, 10).map(log => (
+                      <div key={log.id} className="bg-neutral-50 rounded-2xl p-4 border border-neutral-100">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] font-bold text-neutral-400">
+                            {log.createdAt ? new Date(log.createdAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }) : ''}
+                          </span>
+                        </div>
+                        <p className="text-[12px] text-neutral-600 leading-relaxed">{log.content || '打卡完成'}</p>
+                        {log.images && log.images.length > 0 && (
+                          <div className="flex gap-1.5 mt-2 overflow-x-auto no-scrollbar">
+                            {log.images.map((img, idx) => (
+                              <img key={idx} src={img} className="w-12 h-12 rounded-lg object-cover flex-shrink-0 border border-neutral-100" referrerPolicy="no-referrer" />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {logs.length > 10 && (
+                      <p className="text-[10px] text-neutral-300 font-bold text-center py-2">还有 {logs.length - 10} 条记录</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       <AnimatePresence>
         {isFollowersListOpen && (

@@ -22,7 +22,8 @@ interface CheckInDrawerProps {
   editingPostId: string | null;
   setEditingPostId: (id: string | null) => void;
   onPublish: () => void;
-  onImageUpload: (e: ChangeEvent<HTMLInputElement>, callback: (url: string) => void) => void;
+  onImageUpload: (e: ChangeEvent<HTMLInputElement>, callback: (url: string, previewUrl?: string) => void) => void;
+
 }
 
 export const CheckInDrawer = ({
@@ -129,25 +130,38 @@ export const CheckInDrawer = ({
                     <div key={i} className="relative aspect-square rounded-2xl overflow-hidden shadow-sm group">
                       <img src={img} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       <button
-                        onClick={() => setCheckInImages(prev => prev.filter((_, idx) => idx !== i))}
-                        className="absolute top-1 right-1 bg-black/60 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCheckInImages(prev => prev.filter((_, idx) => idx !== i));
+                        }}
+                        className="absolute top-1.5 right-1.5 bg-red-500/90 text-white rounded-full w-6 h-6 flex items-center justify-center shadow-lg active:scale-90 transition-transform z-10"
+                        title="删除图片"
                       >
-                        <X size={10} className="text-white" />
+                        <X size={14} strokeWidth={3} />
                       </button>
+
                     </div>
                   ))}
-                  {checkInImages.length < 9 && (
+                  {checkInImages.length < 6 && (
                     <label className="aspect-square bg-neutral-50 rounded-2xl border-2 border-dashed border-neutral-100 flex flex-col items-center justify-center text-neutral-300 hover:bg-neutral-100 transition-colors cursor-pointer">
                       <Camera size={20} />
-                      <span className="text-[8px] font-black uppercase mt-1 text-neutral-400">上传</span>
+                      <span className="text-[8px] font-black uppercase mt-1 text-neutral-400">上传 ({checkInImages.length}/6)</span>
                       <input
                         type="file" className="hidden" accept="image/*" multiple
                         onChange={e => {
-                          const files = Array.from(e.target.files || []);
+                          const remainingSlots = 6 - checkInImages.length;
+                          const files = Array.from(e.target.files || []).slice(0, remainingSlots);
                           files.forEach(file => {
-                            onImageUpload({ target: { files: [file] } } as any, (url: string) =>
-                              setCheckInImages(prev => [...prev, url])
-                            );
+                            onImageUpload({ target: { files: [file] } } as any, (url: string, previewUrl?: string) => {
+                              if (previewUrl) {
+                                // 替换预览图为正式 URL
+                                setCheckInImages(prev => prev.map(img => img === previewUrl ? url : img));
+                              } else {
+                                // 新增预览图
+                                setCheckInImages(prev => [...prev, url]);
+                              }
+                            });
+
                           });
                         }}
                       />
@@ -345,6 +359,8 @@ interface TaskDetailsDrawerProps {
   onAddComment: (postId: string, text: string, scope?: InteractionScope) => void;
   onDeleteComment: (postId: string, commentId: string) => void;
   onChangeVisibility: (postId: string, visibility: Visibility) => void;
+  onDeletePost?: (postId: string) => void;
+  onEditPost?: (postId: string) => void;
   onViewDetail: (post: Post | null) => void;
   currentScope?: InteractionScope;
   showScopeSelector?: boolean;
@@ -356,7 +372,7 @@ interface TaskDetailsDrawerProps {
 export const TaskDetailsDrawer = ({
   isOpen, task, onClose,
   activities, userProfile,
-  onLike, onAddComment, onDeleteComment, onChangeVisibility, onViewDetail,
+  onLike, onAddComment, onDeleteComment, onChangeVisibility, onDeletePost, onEditPost, onViewDetail,
   currentScope = 'public',
   emptyStateText = '尚未开始记录',
   showToast,
@@ -421,12 +437,13 @@ export const TaskDetailsDrawer = ({
 
                 return habitActivities.map(act => (
                   <MomentItem
-                    key={act.id}
                     post={act}
                     onLike={onLike}
                     onAddComment={onAddComment}
                     onDeleteComment={onDeleteComment}
                     onChangeVisibility={onChangeVisibility}
+                    onDeletePost={onDeletePost}
+                    onEditPost={onEditPost}
                     onViewDetail={onViewDetail}
                     currentUserProfile={userProfile}
                     currentScope={currentScope}

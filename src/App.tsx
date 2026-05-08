@@ -1,5 +1,6 @@
 import { ChangeEvent, useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import imageCompression from 'browser-image-compression';
 import Auth from './components/Auth';
 import AppContent from './components/AppContent';
 import Header from './components/Header';
@@ -12,6 +13,7 @@ import { CheckInDrawer, CreateTaskModal, DeleteConfirmModal, TaskDetailsDrawer }
 import SearchOverlay from './components/SearchOverlay';
 import SettingsOverlay from './components/SettingsOverlay';
 import UserProfilePage from './components/UserProfilePage';
+import Celebration from './components/Celebration';
 
 import { useAppState } from './hooks/useAppState';
 import { useAppearanceEffects, useReminderEffect, useSupabaseSession } from './hooks/useAppEffects';
@@ -22,8 +24,9 @@ import { useActivityActions } from './hooks/useActivityActions';
 import { useHabitActions } from './hooks/useHabitActions';
 import { useFollowActions } from './hooks/useFollowActions';
 import { isDarkColor, readImageFileAsDataUrl } from './utils/app';
-import { supabase } from './lib/supabase';
 import { useNotifications } from './hooks/useNotifications';
+import { useStorage } from './hooks/useStorage';
+import { supabase } from './lib/supabase';
 
 export default function App() {
   const state = useAppState();
@@ -88,7 +91,13 @@ export default function App() {
     followers, setFollowers,
     viewingProfile, setViewingProfile,
     showFireworks, setShowFireworks,
+    fetchStatus, setFetchStatus,
+    lastViewedFriendsAt, setLastViewedFriendsAt,
+    lastViewedRequestsAt, setLastViewedRequestsAt,
+    bgInputRef,
   } = state;
+
+
 
   useSupabaseSession(setSession, setIsPasswordModalOpen);
   useAppearanceEffects({ appearance, appBackground });
@@ -99,13 +108,16 @@ export default function App() {
   }, [setToast]);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [pullDistance, setPullDistance] = useState(0);
+  const isRefreshingRef = useRef(false);
+  const pullDistance = useRef(0);
   const pullStartY = useRef<number>(0);
   const contentRef = useRef<HTMLDivElement>(null);
   const isPullingRef = useRef(false);
+  const pullTriggeredRef = useRef(false);
+  const animFrameRef = useRef<number | null>(null);
 
   const PULL_THRESHOLD = 60;
-  const RELEASE_THRESHOLD = 80;
+  const DAMPING = 0.5;
 
   useReminderEffect({ dailyReminder, reminderTimes, showToast });
 
@@ -113,7 +125,9 @@ export default function App() {
   const { fetchHabits, fetchActivities } = useHabitsData({
     userId: session?.user?.id,
     setTasks, setCompletedTasks, setActivities,
+    setFetchStatus,
   });
+
 
   // Action hooks
   const { fetchProfile, updateProfile, updateProfileId, handleLogout, handleDeleteAccount, handlePasswordSubmit } =
@@ -149,26 +163,88 @@ export default function App() {
       setDecisionHabit, setSelectedMedal,
       setIsModalOpen, setTaskName, setJoinCode,
       setUserCheckInDays, setShowFireworks, showToast,
+      setHabitLogs: () => {}, // No-op
     });
 
   // 通知 hook
   useNotifications(tasks, reminderTimes);
 
-  const { handleLike, handleAddComment, handleDeleteComment, handleChangeVisibility, handlePublishCheckIn } =
+  const { uploadAvatar, uploadPostImage } = useStorage();
+
+  const { handleLike, handleAddComment, handleDeleteComment, handleChangeVisibility, handlePublishCheckIn, handleEditPost, handleDeletePost } =
     useActivityActions({
       session, userProfile, tasks, activities,
       checkInHabitId, checkInContent, checkInImages, checkInVisibility, editingPostId,
       setActivities, setIsCheckInOpen, setCheckInContent,
       setCheckInHabitId, setCheckInImages, setEditingPostId,
-      handleCheck, showToast,
+      handleCheck, showToast, uploadPostImage,
     });
 
+  const handleImageUpload = useCallback(async (e: ChangeEvent<HTMLInputElement>, callback: (url: string, previewUrl?: string) => void) => {
+    const file = e.target.files?.[0];
+    if (!file || !session?.user?.id) return;
+
+    let previewUrl = '';
+    // 1. 先进行本地预览 (Base64) 提升感知速度
+    readImageFileAsDataUrl(file, (url) => {
+      previewUrl = url;
+      callback(url);
+    });
+
+    // 2. 压缩图片 (针对移动端优化)
+    showToast('正在优化图片...');
+    let compressedFile = file;
+    try {
+      const options = {
+        maxSizeMB: 0.8,
+        maxWidthOrHeight: 1280,
+        useWebWorker: true,
+      };
+      compressedFile = await imageCompression(file, options);
+    } catch (error) {
+      console.error('Compression failed:', error);
+    }
+
+    // 3. 上传到存储桶
+    showToast('正在同步到云端...');
+    const publicUrl = await uploadPostImage(session.user.id, compressedFile);
+    
+    if (publicUrl) {
+      // 传入 previewUrl，方便 UI 将预览图替换为正式图
+      callback(publicUrl, previewUrl);
+      showToast('同步成功');
+    } else {
+      showToast('上传失败，请重试');
+    }
+  }, [session, uploadPostImage, showToast]);
+
+
   const handleRefresh = useCallback(async () => {
+    if (isRefreshingRef.current) return;
+    isRefreshingRef.current = true;
     setIsRefreshing(true);
-    await Promise.all([fetchHabits(), fetchActivities(), fetchFriends(), fetchFollowings(), fetchFollowers()]);
-    setIsRefreshing(false);
+    try {
+      await Promise.all([
+        fetchHabits(),
+        fetchActivities(),
+        fetchFriendRequests(),
+        fetchFriends(),
+        fetchFollowings(),
+        fetchFollowers(),
+        fetchProfile(),
+      ]);
+    } finally {
+      isRefreshingRef.current = false;
+      setIsRefreshing(false);
+    }
     showToast('刷新成功');
-  }, [fetchHabits, fetchActivities, fetchFriends, fetchFollowings, fetchFollowers, showToast]);
+  }, [fetchHabits, fetchActivities, fetchFriendRequests, fetchFriends, fetchFollowings, fetchFollowers, fetchProfile, showToast]);
+
+  const handleLoadMore = useCallback(async () => {
+    await fetchActivities(activities.length);
+  }, [fetchActivities, activities.length]);
+
+
 
   useEffect(() => {
     if (!session?.user?.id) return;
@@ -182,7 +258,6 @@ export default function App() {
     fetchFriends();
     fetchFollowings();
     fetchFollowers();
-
     // Realtime subscription for friendships
     const friendChannel = supabase.channel('public:friendships')
       .on(
@@ -206,7 +281,8 @@ export default function App() {
       )
       .subscribe();
 
-    // Realtime subscription for activities (likes/comments/visibility updates)
+    // Realtime subscription for activities (DISABLED TEMPORARILY TO FIX LOOP)
+    /*
     const activityChannel = supabase.channel('public:activities')
       .on(
         'postgres_changes',
@@ -216,13 +292,12 @@ export default function App() {
         }
       )
       .subscribe();
-
+    */
     return () => {
       supabase.removeChannel(friendChannel);
       supabase.removeChannel(habitChannel);
-      supabase.removeChannel(activityChannel);
     };
-  }, [session?.user?.id, fetchFriendRequests, fetchFriends]);
+  }, [session?.user?.id]);
 
   // Team vote timeout check (best-effort client side)
   useEffect(() => {
@@ -230,15 +305,22 @@ export default function App() {
     checkTeamVoteTimeouts(tasks);
   }, [tasks, checkTeamVoteTimeouts]);
 
-  const [lastViewedFriendsAt, setLastViewedFriendsAt] = useState(() => Number(localStorage.getItem('lastViewedFriendsAt')) || 0);
 
+  // Effect to clear "New Friend Posts" red dot
   useEffect(() => {
     if (activeTab === 'friends' && friendSubTab === 'feed') {
-      const now = Date.now();
-      setLastViewedFriendsAt(now);
-      localStorage.setItem('lastViewedFriendsAt', now.toString());
+      // Use a slight future timestamp to ensure it clears even if clock is slightly off
+      setLastViewedFriendsAt(Date.now() + 500);
     }
-  }, [activeTab, friendSubTab]);
+  }, [activeTab, friendSubTab, setLastViewedFriendsAt]);
+
+  // Effect to clear "New Friend Requests" red dot
+  useEffect(() => {
+    if (activeTab === 'friends' && friendSubTab === 'requests') {
+      setLastViewedRequestsAt(Date.now() + 500);
+    }
+  }, [activeTab, friendSubTab, setLastViewedRequestsAt]);
+
 
   const friendIds = useMemo(() => new Set(friends.map(f => f.id)), [friends]);
   const latestFriendPostTime = useMemo(() => {
@@ -248,6 +330,14 @@ export default function App() {
     return times.length > 0 ? Math.max(...times) : 0;
   }, [activities, friendIds]);
   const hasNewFriendPosts = latestFriendPostTime > lastViewedFriendsAt;
+
+  const hasNewFriendRequests = useMemo(() => {
+    return friendRequests.some(r => {
+      const createdAt = r.created_at ? new Date(r.created_at).getTime() : 0;
+      return createdAt > lastViewedRequestsAt;
+    });
+  }, [friendRequests, lastViewedRequestsAt]);
+
 
   const totalLikes = useMemo(() => {
     if (!userProfile?.id) return 0;
@@ -268,12 +358,6 @@ export default function App() {
       });
     }
   }, [setViewingProfile]);
-
-  const handleImageUpload = (e: ChangeEvent<HTMLInputElement>, callback: (url: string) => void) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    readImageFileAsDataUrl(file, callback);
-  };
 
   if (!session) return <Auth onLogin={() => {}} />;
 
@@ -303,59 +387,95 @@ export default function App() {
 
       {/* Main content */}
       <div className="flex-grow relative overflow-hidden">
-        {isRefreshing && (
-          <div className="absolute top-0 left-0 right-0 z-50 flex justify-center py-3 bg-white/80 backdrop-blur-sm">
-            <div className="flex items-center gap-2 text-sm text-neutral-500">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                className="w-4 h-4 border-2 border-neutral-300 border-t-neutral-600 rounded-full"
-              />
-              刷新中...
-            </div>
+        {/* Refresh indicator */}
+        <div
+          className="absolute top-0 left-0 right-0 z-50 flex justify-center bg-white/90 backdrop-blur-sm pointer-events-none transition-all duration-200"
+          style={{
+            height: isRefreshing || pullDistance.current > 0 ? 56 : 0,
+            opacity: isRefreshing || pullDistance.current > 0 ? 1 : 0,
+          }}
+        >
+          <div className="flex flex-col items-center justify-center gap-1 h-full">
+            {isRefreshing ? (
+              <>
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                  className="w-5 h-5 border-[2.5px] border-neutral-200 border-t-neutral-700 rounded-full"
+                />
+                <span className="text-[11px] font-semibold text-neutral-500">刷新中...</span>
+              </>
+            ) : (
+              <>
+                <motion.div
+                  animate={{ rotate: pullDistance.current >= PULL_THRESHOLD ? 180 : 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="w-5 h-5 border-[2.5px] border-neutral-200 border-t-neutral-700 rounded-full"
+                />
+                <span className="text-[11px] font-semibold text-neutral-400">
+                  {pullDistance.current >= PULL_THRESHOLD ? '松开立即刷新' : '下拉刷新'}
+                </span>
+              </>
+            )}
           </div>
-        )}
-        {!isRefreshing && pullDistance > 0 && (
-          <div className="absolute top-0 left-0 right-0 z-50 flex justify-center py-3 bg-white/80 backdrop-blur-sm pointer-events-none">
-            <div className="flex flex-col items-center gap-1">
-              <motion.div
-                animate={{ rotate: pullDistance >= PULL_THRESHOLD ? 180 : 0 }}
-                transition={{ duration: 0.15 }}
-                className="w-4 h-4 border-2 border-neutral-300 border-t-neutral-600 rounded-full"
-              />
-              <span className="text-xs text-neutral-400">
-                {pullDistance >= PULL_THRESHOLD ? '释放刷新' : '下拉刷新'}
-              </span>
-            </div>
-          </div>
-        )}
+        </div>
         <div
           ref={contentRef}
           className="h-full overflow-y-auto"
-          style={{ paddingTop: isRefreshing || pullDistance > 0 ? 44 : 0 }}
           onTouchStart={e => {
             if (isRefreshing) return;
             pullStartY.current = e.touches[0].clientY;
             isPullingRef.current = false;
+            pullTriggeredRef.current = false;
           }}
           onTouchMove={e => {
             if (isRefreshing || !contentRef.current) return;
             const scrollTop = contentRef.current.scrollTop;
+            if (scrollTop > 0) return;
             const currentY = e.touches[0].clientY;
             const diff = currentY - pullStartY.current;
-            if (diff > 0 && scrollTop === 0) {
-              e.preventDefault();
-              const distance = Math.min(diff * 0.5, RELEASE_THRESHOLD + 40);
-              setPullDistance(distance);
-              isPullingRef.current = distance >= PULL_THRESHOLD;
+            if (diff <= 0) {
+              if (animFrameRef.current !== null) {
+                cancelAnimationFrame(animFrameRef.current);
+                animFrameRef.current = null;
+              }
+              pullDistance.current = 0;
+              return;
             }
+            e.preventDefault();
+            if (animFrameRef.current !== null) {
+              cancelAnimationFrame(animFrameRef.current);
+            }
+            animFrameRef.current = requestAnimationFrame(() => {
+              if (!contentRef.current) return;
+              const rawDiff = e.touches[0].clientY - pullStartY.current;
+              const damped = rawDiff * DAMPING;
+              const resistance = 1 - Math.min(damped / 300, 0.7);
+              pullDistance.current = Math.max(0, Math.min(damped * resistance, 150));
+              isPullingRef.current = pullDistance.current >= PULL_THRESHOLD;
+            });
           }}
           onTouchEnd={() => {
-            if (isRefreshing) return;
-            if (isPullingRef.current && contentRef.current && contentRef.current.scrollTop === 0) {
-              handleRefresh();
+            if (animFrameRef.current !== null) {
+              cancelAnimationFrame(animFrameRef.current);
+              animFrameRef.current = null;
             }
-            setPullDistance(0);
+            if (isRefreshing) return;
+            if (pullDistance.current >= PULL_THRESHOLD && !pullTriggeredRef.current) {
+              pullTriggeredRef.current = true;
+              handleRefresh().finally(() => {
+                if (contentRef.current) {
+                  contentRef.current.style.transition = 'scroll-behavior 400ms ease-out';
+                  contentRef.current.scrollTop = 0;
+                  setTimeout(() => {
+                    if (contentRef.current) contentRef.current.style.transition = '';
+                  }, 400);
+                }
+                pullDistance.current = 0;
+              });
+            } else {
+              pullDistance.current = 0;
+            }
             isPullingRef.current = false;
           }}
         >
@@ -369,12 +489,11 @@ export default function App() {
             >
             <AppContent
               activeTab={activeTab}
-              homeSubTab={homeSubTab} setHomeSubTab={setHomeSubTab} followings={followings}
+              homeSubTab={homeSubTab} setHomeSubTab={setHomeSubTab}
               friendSubTab={friendSubTab} setFriendSubTab={setFriendSubTab}
               friendRequests={friendRequests}
               onAcceptRequest={handleAcceptFriendRequest} onRejectRequest={handleRejectFriendRequest}
               tasksSubTab={tasksSubTab} setTasksSubTab={setTasksSubTab}
-              tasks={tasks} completedTasks={completedTasks} activities={activities} friends={friends}
               joinCode={joinCode} setJoinCode={setJoinCode}
               handleJoinTeam={handleJoinTeam} handleStartTeam={handleStartTeam} handleKickMember={handleKickMember}
               handleCheck={handleCheck}
@@ -388,18 +507,20 @@ export default function App() {
               onClaimReward={handleClaimReward}
               handleLike={handleLike} handleAddComment={handleAddComment}
               handleDeleteComment={handleDeleteComment} handleChangeVisibility={handleChangeVisibility}
-              setSelectedPost={setSelectedPost} setSelectedTaskDetails={setSelectedTaskDetails}
-              userProfile={userProfile} showToast={showToast}
+              handleDeletePost={handleDeletePost}
+              handleEditPost={handleEditPost}
+              showToast={showToast}
               handleImageUpload={handleImageUpload}
-              setUserProfile={setUserProfile} updateProfile={updateProfile}
+              updateProfile={updateProfile}
               isEditingName={isEditingName} setIsEditingName={setIsEditingName}
               isEditingId={isEditingId} setIsEditingId={setIsEditingId}
               updateProfileId={updateProfileId}
-              userCheckInDays={userCheckInDays} setSelectedMedal={setSelectedMedal}
+              setSelectedMedal={setSelectedMedal}
               onViewProfile={handleViewProfile}
               hasNewFriendPosts={hasNewFriendPosts}
-              followers={followers}
               totalLikes={totalLikes}
+              fetchStatus={fetchStatus}
+              onLoadMore={handleLoadMore}
             />
             </motion.div>
           </AnimatePresence>
@@ -411,9 +532,10 @@ export default function App() {
         setActiveTab={setActiveTab} 
         isDark={isDark} 
         setIsCheckInOpen={setIsCheckInOpen} 
-        hasNewFriendRequests={friendRequests.length > 0}
+        hasNewFriendRequests={hasNewFriendRequests}
         hasNewFriendPosts={hasNewFriendPosts}
       />
+
 
       {/* ── Modals & Overlays ── */}
       <CreateTaskModal
@@ -459,6 +581,8 @@ export default function App() {
         activities={activities} userProfile={userProfile}
         onLike={handleLike} onAddComment={handleAddComment}
         onDeleteComment={handleDeleteComment} onChangeVisibility={handleChangeVisibility}
+        onDeletePost={handleDeletePost}
+        onEditPost={handleEditPost}
         onViewDetail={setSelectedPost}
         currentScope={selectedTaskDetails?.type === 'team' ? 'team' : 'friends'}
         showScopeSelector={true}
@@ -520,10 +644,14 @@ export default function App() {
       <MoodModal isOpen={isMoodOpen} onClose={() => setIsMoodOpen(false)} currentMood={currentMood} setCurrentMood={setCurrentMood} />
       <MedalModal medal={selectedMedal} onClose={() => setSelectedMedal(null)} />
 
+      {state.showFireworks && <Celebration onComplete={() => state.setShowFireworks(false)} />}
+
       <PostDetailOverlay
         post={selectedPost} onClose={() => setSelectedPost(null)}
         onLike={handleLike} onAddComment={handleAddComment}
         onDeleteComment={handleDeleteComment} onChangeVisibility={handleChangeVisibility}
+        onDeletePost={handleDeletePost}
+        onEditPost={handleEditPost}
         currentUserProfile={userProfile}
       />
 
@@ -534,9 +662,12 @@ export default function App() {
         onClose={() => setViewingProfile(null)}
         activities={activities}
         isFollowing={viewingProfile ? isFollowing(viewingProfile.id) : false}
+        isFriend={viewingProfile ? friends.some(f => f.id === viewingProfile.id) : false}
         onFollow={handleFollow}
         onLike={handleLike} onAddComment={handleAddComment}
         onDeleteComment={handleDeleteComment} onChangeVisibility={handleChangeVisibility}
+        onDeletePost={handleDeletePost}
+        onEditPost={handleEditPost}
         onViewDetail={setSelectedPost}
         currentUserProfile={userProfile}
         onSendFriendRequest={handleSendFriendRequest}

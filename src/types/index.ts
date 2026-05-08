@@ -54,7 +54,7 @@ export interface Comment {
 export interface Post {
   id: string;
   habitId: string;
-  user: UserProfile & { id?: string };
+  user: UserProfile;
   images: string[];
   tag: string;
   likedBy: { name: string; userId: string; scope: InteractionScope }[];

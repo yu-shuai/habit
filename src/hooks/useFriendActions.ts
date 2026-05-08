@@ -31,18 +31,22 @@ export const useFriendActions = ({
       .eq('receiver_id', session.user.id)
       .eq('status', 'pending');
 
-    if (data) {
-      const requestsWithProfiles = await Promise.all(
-        data.map(async (r: any) => {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', r.requester_id)
-            .single();
-          return { ...r, requester: profile };
-        })
-      );
+    if (data && data.length > 0) {
+      // Batch query profiles instead of N+1 individual queries
+      const requesterIds = [...new Set(data.map((r: any) => r.requester_id))];
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('id', requesterIds);
+
+      const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+      const requestsWithProfiles = data.map((r: any) => ({
+        ...r,
+        requester: profileMap.get(r.requester_id) || null,
+      }));
       setFriendRequests(() => requestsWithProfiles);
+    } else {
+      setFriendRequests(() => []);
     }
   }, [session, setFriendRequests]);
 
@@ -72,11 +76,13 @@ export const useFriendActions = ({
     async (query: string) => {
       setSearchQuery(query);
       if (!query.trim()) { setSearchResults([]); return; }
-      // Don't call setIsSearching here — it controls overlay visibility
+      // Sanitize query: escape PostgREST special characters to prevent filter manipulation
+      const sanitized = query.trim().replace(/[,.()\\/"'%_]/g, '');
+      if (!sanitized) { setSearchResults([]); return; }
       const { data } = await supabase
         .from('profiles')
         .select('*')
-        .or(`custom_id.ilike.%${query}%,name.ilike.%${query}%`)
+        .or(`custom_id.ilike.%${sanitized}%,name.ilike.%${sanitized}%`)
         .limit(10);
 
       if (data) {

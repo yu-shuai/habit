@@ -8,6 +8,7 @@ import SettingsSubPages from './settings/SettingsSubPages';
 import SettingsSheets from './settings/SettingsSheets';
 import SettingsModals from './settings/SettingsModals';
 import { APPEARANCE_OPTIONS, VISIBILITY_OPTIONS } from '../constants/app';
+import { SETTINGS_KEYS } from '../hooks/useAppState';
 
 const BACKGROUND_PRESETS = [
   { name: '默认', color: '#ffffff' },
@@ -167,7 +168,15 @@ export default function SettingsOverlay({
                         icon={<Trash2 size={20} />}
                         label="清除缓存"
                         value={cacheSize}
-                        onClick={() => { localStorage.clear(); setCacheSize('0 B'); showToast('缓存已清理'); }}
+                        onClick={() => {
+                          // #9: Preserve user preferences when clearing cache
+                          const preserved = new Map<string, string | null>();
+                          SETTINGS_KEYS.forEach(key => preserved.set(key, localStorage.getItem(key)));
+                          localStorage.clear();
+                          preserved.forEach((val, key) => { if (val !== null) localStorage.setItem(key, val); });
+                          setCacheSize('0 B');
+                          showToast('缓存已清理（用户偏好已保留）');
+                        }}
                       />
                     </div>
                   </div>
@@ -176,7 +185,7 @@ export default function SettingsOverlay({
                     <h3 className="px-2 text-[10px] font-black uppercase text-neutral-400 tracking-[0.2em] italic">支持与反馈</h3>
                     <div className="bg-white rounded-[2rem] p-2 border border-neutral-100 shadow-sm flex flex-col gap-2">
                       <SettingsItem icon={<Headphones size={20} />} label="意见反馈" onClick={() => setActiveSubPage('feedback')} />
-                      <SettingsItem icon={<Smile size={20} />} label="加入官方社群" />
+                      <SettingsItem icon={<Smile size={20} />} label="加入官方社群" onClick={() => showToast('敬请期待')} />
                       <SettingsItem icon={<Info size={20} />} label="关于 Habit" onClick={() => setSettingsCategory('about')} />
                     </div>
                   </div>
@@ -231,9 +240,9 @@ export default function SettingsOverlay({
                     </div>
                   </div>
                   <div className="bg-white rounded-[2rem] overflow-hidden border border-neutral-100 shadow-sm divide-y divide-neutral-50">
-                    <SettingsItem icon={<FileText size={20} />} label="用户协议" />
-                    <SettingsItem icon={<ShieldCheck size={20} />} label="隐私政策" />
-                    <SettingsItem icon={<Info size={20} />} label="官方网站" />
+                    <SettingsItem icon={<FileText size={20} />} label="用户协议" onClick={() => showToast('敬请期待')} />
+                    <SettingsItem icon={<ShieldCheck size={20} />} label="隐私政策" onClick={() => showToast('敬请期待')} />
+                    <SettingsItem icon={<Info size={20} />} label="官方网站" onClick={() => showToast('敬请期待')} />
                   </div>
                   <p className="text-center text-[10px] font-medium text-neutral-300 px-10 leading-relaxed">
                     © 2026 Habit Studio. All rights reserved. <br />致力于让自律成为一种生活方式。

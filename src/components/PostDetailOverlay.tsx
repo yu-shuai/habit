@@ -9,12 +9,14 @@ interface PostDetailOverlayProps {
   onAddComment: (postId: string, text: string, scope?: InteractionScope) => void;
   onDeleteComment: (postId: string, commentId: string) => void;
   onChangeVisibility: (postId: string, visibility: Visibility) => void;
+  onDeletePost?: (postId: string) => void;
+  onEditPost?: (postId: string) => void;
   currentUserProfile: UserProfile;
 }
 
 export default function PostDetailOverlay({
   post, onClose,
-  onLike, onAddComment, onDeleteComment, onChangeVisibility,
+  onLike, onAddComment, onDeleteComment, onChangeVisibility, onDeletePost, onEditPost,
   currentUserProfile,
 }: PostDetailOverlayProps) {
   return (
@@ -46,6 +48,8 @@ export default function PostDetailOverlay({
               onAddComment={onAddComment}
               onDeleteComment={onDeleteComment}
               onChangeVisibility={onChangeVisibility}
+              onDeletePost={onDeletePost}
+              onEditPost={onEditPost}
               currentUserProfile={currentUserProfile}
               showScopeSelector={false}
             />

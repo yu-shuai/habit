@@ -9,12 +9,16 @@ interface FollowingTabProps {
   onAddComment: (postId: string, text: string, scope?: InteractionScope) => void;
   onDeleteComment: (postId: string, commentId: string) => void;
   onChangeVisibility: (postId: string, visibility: Visibility) => void;
+  onDeletePost?: (postId: string) => void;
+  onEditPost?: (postId: string) => void;
   setSelectedPost: (post: Post | null) => void;
+  onViewProfile: (userId: string) => void;
 }
 
 export default function FollowingTab({
   activities, followings, userProfile,
-  onLike, onAddComment, onDeleteComment, onChangeVisibility, setSelectedPost,
+  onLike, onAddComment, onDeleteComment, onChangeVisibility, onDeletePost, onEditPost, setSelectedPost,
+  onViewProfile,
 }: FollowingTabProps) {
   // Public and friends posts from followed users
   const followingPosts = activities
@@ -26,13 +30,15 @@ export default function FollowingTab({
       {followingPosts.length > 0 ? (
         followingPosts.map(post => (
           <MomentItem
-            key={post.id}
             post={post}
             onLike={onLike}
             onAddComment={onAddComment}
             onDeleteComment={onDeleteComment}
             onChangeVisibility={onChangeVisibility}
+            onDeletePost={onDeletePost}
+            onEditPost={onEditPost}
             onViewDetail={setSelectedPost}
+            onViewProfile={onViewProfile}
             currentUserProfile={userProfile}
             currentScope="public"
           />

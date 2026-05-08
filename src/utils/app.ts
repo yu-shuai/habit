@@ -1,3 +1,5 @@
+import { ChangeEvent } from 'react';
+
 export const isDarkColor = (color: string | null) => {
   if (!color) return false;
 
@@ -24,14 +26,20 @@ export const getNextHabitGoal = (totalDays: number) => {
 
 export const readImageFileAsDataUrl = (file: File, callback: (url: string) => void) => {
   const reader = new FileReader();
-
   reader.onload = (upload) => {
     if (upload.target?.result) {
       callback(upload.target.result as string);
     }
   };
-
   reader.readAsDataURL(file);
+};
+
+/** 仅仅是为了统一导出 */
+export const getFileFromInput = (e: ChangeEvent<HTMLInputElement>): File | null => {
+  if (e.target.files && e.target.files.length > 0) {
+    return e.target.files[0];
+  }
+  return null;
 };
 
 export const copyToClipboard = async (text: string): Promise<boolean> => {
