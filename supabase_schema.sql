@@ -119,3 +119,48 @@ USING (auth.uid() = user_id);
 CREATE POLICY "Authenticated users can update activities"
 ON activities FOR UPDATE
 USING (true);
+
+-- 创建 notifications 表 (通知)
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  actor_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  actor_name TEXT NOT NULL,
+  actor_avatar TEXT DEFAULT '',
+  type TEXT NOT NULL CHECK (type IN ('like', 'comment', 'reply', 'friend_request', 'friend_accept', 'follow', 'mention')),
+  post_id UUID REFERENCES activities(id) ON DELETE CASCADE,
+  comment_id TEXT,
+  content TEXT DEFAULT '',
+  post_content_preview TEXT DEFAULT '',
+  post_type TEXT DEFAULT '',
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- 启用 RLS
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+
+-- 通知表策略：用户只能查看自己的通知
+CREATE POLICY "Users can view their own notifications"
+ON notifications FOR SELECT
+USING (auth.uid() = user_id);
+
+-- 认证用户可以创建通知（系统自动创建）
+CREATE POLICY "Authenticated users can create notifications"
+ON notifications FOR INSERT
+WITH CHECK (auth.uid() = actor_id);
+
+-- 用户可以更新自己的通知（标记已读）
+CREATE POLICY "Users can update their own notifications"
+ON notifications FOR UPDATE
+USING (auth.uid() = user_id);
+
+-- 用户可以删除自己的通知
+CREATE POLICY "Users can delete their own notifications"
+ON notifications FOR DELETE
+USING (auth.uid() = user_id);
+
+-- 创建索引加速查询
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, is_read) WHERE is_read = FALSE;
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);

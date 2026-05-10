@@ -9,6 +9,7 @@ import MoodModal from './components/MoodModal';
 import MedalModal from './components/MedalModal';
 import PostDetailOverlay from './components/PostDetailOverlay';
 import DecisionOverlay from './components/DecisionOverlay';
+import NotificationCenter from './components/NotificationCenter';
 import { CheckInDrawer, CreateTaskModal, DeleteConfirmModal, TaskDetailsDrawer } from './components/CheckInModal';
 import SearchOverlay from './components/SearchOverlay';
 import SettingsOverlay from './components/SettingsOverlay';
@@ -23,9 +24,12 @@ import { useFriendActions } from './hooks/useFriendActions';
 import { useActivityActions } from './hooks/useActivityActions';
 import { useHabitActions } from './hooks/useHabitActions';
 import { useFollowActions } from './hooks/useFollowActions';
+import { useNotificationActions } from './hooks/useNotificationActions';
+import { useAppUpdate } from './hooks/useAppUpdate';
 import { isDarkColor, readImageFileAsDataUrl } from './utils/app';
 import { useNotifications } from './hooks/useNotifications';
 import { useStorage } from './hooks/useStorage';
+import { useNotificationStore } from './store/useNotificationStore';
 import { supabase } from './lib/supabase';
 
 export default function App() {
@@ -115,11 +119,20 @@ export default function App() {
   const isPullingRef = useRef(false);
   const pullTriggeredRef = useRef(false);
   const animFrameRef = useRef<number | null>(null);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
 
   const PULL_THRESHOLD = 60;
   const DAMPING = 0.5;
 
   useReminderEffect({ dailyReminder, reminderTimes, showToast });
+
+  const { fetchNotifications, markAsRead, markAllAsRead, createNotification, loadMore, hasMore, getPreferences, savePreferences, updateBadge } = useNotificationActions(session, userProfile);
+  const { notifications } = useNotificationStore();
+  const unreadCount = useNotificationStore(s => s.unreadCount);
+
+  useEffect(() => {
+    updateBadge();
+  }, [unreadCount, updateBadge]);
 
   // Data hooks
   const { fetchHabits, fetchActivities } = useHabitsData({
@@ -128,25 +141,28 @@ export default function App() {
     setFetchStatus,
   });
 
-
   // Action hooks
+  const { uploadAvatar, uploadPostImage, deleteFile, deleteFiles } = useStorage();
+
   const { fetchProfile, updateProfile, updateProfileId, handleLogout, handleDeleteAccount, handlePasswordSubmit } =
     useUserActions({
       session, userProfile, setUserProfile, setUserCheckInDays,
       setIsLogoutConfirmOpen, setIsSettingsOpen,
       setIsPasswordModalOpen, setNewPassInput, newPassInput, showToast,
-      setActivities,
+      setActivities, deleteFile, deleteFiles
     });
 
   const friendActions = useFriendActions({
       session, userProfile, setFriendRequests, setFriends,
       setSearchResults, setSearchQuery, setIsSearching, showToast,
+      createNotification,
     });
 
   const { fetchFriendRequests, fetchFriends, handleSearch, handleSendFriendRequest, handleAcceptFriendRequest, handleRejectFriendRequest, handleDeleteFriend } = friendActions;
 
   const { fetchFollowings, fetchFollowers, handleFollow, isFollowing } = useFollowActions({
     session, followings, setFollowings, setFollowers, showToast,
+    createNotification,
   });
 
   const {
@@ -164,12 +180,14 @@ export default function App() {
       setIsModalOpen, setTaskName, setJoinCode,
       setUserCheckInDays, setShowFireworks, showToast,
       setHabitLogs: () => {}, // No-op
+      createNotification,
     });
 
   // 通知 hook
   useNotifications(tasks, reminderTimes);
-
-  const { uploadAvatar, uploadPostImage } = useStorage();
+  
+  // 检查版本更新
+  useAppUpdate();
 
   const { handleLike, handleAddComment, handleDeleteComment, handleChangeVisibility, handlePublishCheckIn, handleEditPost, handleDeletePost } =
     useActivityActions({
@@ -177,7 +195,8 @@ export default function App() {
       checkInHabitId, checkInContent, checkInImages, checkInVisibility, editingPostId,
       setActivities, setIsCheckInOpen, setCheckInContent,
       setCheckInHabitId, setCheckInImages, setEditingPostId,
-      handleCheck, showToast, uploadPostImage,
+      handleCheck, showToast, uploadPostImage, deleteFiles,
+      createNotification,
     });
 
   const handleImageUpload = useCallback(async (e: ChangeEvent<HTMLInputElement>, callback: (url: string, previewUrl?: string) => void) => {
@@ -232,13 +251,14 @@ export default function App() {
         fetchFollowings(),
         fetchFollowers(),
         fetchProfile(),
+        fetchNotifications(),
       ]);
     } finally {
       isRefreshingRef.current = false;
       setIsRefreshing(false);
     }
     showToast('刷新成功');
-  }, [fetchHabits, fetchActivities, fetchFriendRequests, fetchFriends, fetchFollowings, fetchFollowers, fetchProfile, showToast]);
+  }, [fetchHabits, fetchActivities, fetchFriendRequests, fetchFriends, fetchFollowings, fetchFollowers, fetchProfile, fetchNotifications, showToast]);
 
   const handleLoadMore = useCallback(async () => {
     await fetchActivities(activities.length);
@@ -258,6 +278,7 @@ export default function App() {
     fetchFriends();
     fetchFollowings();
     fetchFollowers();
+    fetchNotifications();
     // Realtime subscription for friendships
     const friendChannel = supabase.channel('public:friendships')
       .on(
@@ -281,8 +302,7 @@ export default function App() {
       )
       .subscribe();
 
-    // Realtime subscription for activities (DISABLED TEMPORARILY TO FIX LOOP)
-    /*
+    // Realtime subscription for activities
     const activityChannel = supabase.channel('public:activities')
       .on(
         'postgres_changes',
@@ -292,10 +312,21 @@ export default function App() {
         }
       )
       .subscribe();
-    */
+    const notificationChannel = supabase.channel('public:notifications')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${session.user.id}` },
+        () => {
+          fetchNotifications();
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(friendChannel);
       supabase.removeChannel(habitChannel);
+      supabase.removeChannel(activityChannel);
+      supabase.removeChannel(notificationChannel);
     };
   }, [session?.user?.id]);
 
@@ -534,6 +565,7 @@ export default function App() {
         setIsCheckInOpen={setIsCheckInOpen} 
         hasNewFriendRequests={hasNewFriendRequests}
         hasNewFriendPosts={hasNewFriendPosts}
+        onOpenNotifications={() => setIsNotificationOpen(true)}
       />
 
 
@@ -671,6 +703,25 @@ export default function App() {
         onViewDetail={setSelectedPost}
         currentUserProfile={userProfile}
         onSendFriendRequest={handleSendFriendRequest}
+      />
+
+      {/* Notification center */}
+      <NotificationCenter
+        isOpen={isNotificationOpen}
+        onClose={() => setIsNotificationOpen(false)}
+        notifications={notifications}
+        onMarkAsRead={markAsRead}
+        onMarkAllAsRead={markAllAsRead}
+        onLoadMore={loadMore}
+        hasMore={hasMore}
+        onViewProfile={(userId) => { setIsNotificationOpen(false); handleViewProfile(userId); }}
+        onViewPost={(postId) => {
+          setIsNotificationOpen(false);
+          const post = activities.find(a => a.id === postId);
+          if (post) setSelectedPost(post);
+        }}
+        getPreferences={getPreferences}
+        savePreferences={savePreferences}
       />
 
       {/* Toast */}

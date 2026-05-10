@@ -1,12 +1,12 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Heart, MessageCircle, MoreHorizontal, Globe, Users, Lock } from 'lucide-react';
-import { Post, InteractionScope, Visibility, UserProfile } from '../types';
+import { Post, InteractionScope, Visibility, UserProfile, Comment } from '../types';
 
 interface MomentItemProps {
   post: Post;
   onLike: (postId: string, scope?: InteractionScope) => void;
-  onAddComment: (postId: string, text: string, scope?: InteractionScope) => void;
+  onAddComment: (postId: string, text: string, scope?: InteractionScope, replyToUserId?: string, replyToUserName?: string, replyToCommentId?: string) => void;
   onDeleteComment: (postId: string, commentId: string) => void;
   onChangeVisibility: (postId: string, visibility: Visibility) => void;
   onDeletePost?: (postId: string) => void;
@@ -17,12 +17,19 @@ interface MomentItemProps {
   currentScope?: InteractionScope;
   allowedScopes?: InteractionScope[];
   showScopeSelector?: boolean;
+  aggregateScopes?: boolean;
 }
 
 const SCOPE_LABELS: Record<InteractionScope, string> = {
   public: '广场',
   friends: '朋友',
   team: '团队',
+};
+
+const SCOPE_BADGE_CLASS: Record<InteractionScope, string> = {
+  public: 'text-blue-500 bg-blue-50',
+  friends: 'text-emerald-500 bg-emerald-50',
+  team: 'text-amber-500 bg-amber-50',
 };
 
 const VisibilityIcon = ({ v }: { v: Visibility }) => {
@@ -37,6 +44,61 @@ const VISIBILITY_OPTIONS: { id: Visibility; label: string }[] = [
   { id: 'private', label: '仅自己' },
 ];
 
+const ScopeBadge = ({ scope }: { scope: InteractionScope }) => (
+  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${SCOPE_BADGE_CLASS[scope]}`}>
+    {SCOPE_LABELS[scope]}
+  </span>
+);
+
+interface AggregatedLike {
+  name: string;
+  userId: string;
+  scopes: InteractionScope[];
+}
+
+function aggregateLikes(post: Post): AggregatedLike[] {
+  const map = new Map<string, AggregatedLike>();
+  for (const l of post.likedBy) {
+    const existing = map.get(l.userId);
+    if (existing) {
+      if (!existing.scopes.includes(l.scope)) {
+        existing.scopes.push(l.scope);
+      }
+    } else {
+      map.set(l.userId, { name: l.name, userId: l.userId, scopes: [l.scope] });
+    }
+  }
+  return Array.from(map.values());
+}
+
+function aggregateComments(post: Post): Comment[] {
+  return [...post.comments].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+type CommentNode = Comment & { replies: CommentNode[] };
+
+function buildCommentTree(comments: Comment[]): CommentNode[] {
+  const map = new Map<string, CommentNode>();
+  const roots: CommentNode[] = [];
+
+  const sorted = [...comments].sort((a, b) => a.createdAt - b.createdAt);
+
+  for (const c of sorted) {
+    map.set(c.id, { ...c, replies: [] });
+  }
+
+  for (const c of sorted) {
+    const node = map.get(c.id)!;
+    if (c.replyToCommentId && map.has(c.replyToCommentId)) {
+      map.get(c.replyToCommentId)!.replies.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  return roots;
+}
+
 export default function MomentItem({
   post,
   onLike,
@@ -49,6 +111,7 @@ export default function MomentItem({
   onEditPost,
   currentUserProfile,
   currentScope = 'public',
+  aggregateScopes = false,
 }: MomentItemProps) {
   const [commentText, setCommentText] = useState('');
   const [showCommentInput, setShowCommentInput] = useState(false);
@@ -57,22 +120,46 @@ export default function MomentItem({
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [showAllComments, setShowAllComments] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [replyTarget, setReplyTarget] = useState<{ userId: string; userName: string; commentId: string } | null>(null);
   const commentRef = useRef<HTMLInputElement>(null);
 
-  const scopedLikes = post.likedBy.filter(l => l.scope === currentScope);
-  const scopedComments = post.comments.filter(c => c.scope === currentScope);
-  const isLiked = scopedLikes.some(l => l.userId === currentUserProfile.id);
+  const scopedLikes = aggregateScopes
+    ? aggregateLikes(post)
+    : post.likedBy.filter(l => l.scope === currentScope).map(l => ({ name: l.name, userId: l.userId, scopes: [l.scope] as InteractionScope[] }));
+
+  const allComments = aggregateScopes ? aggregateComments(post) : post.comments.filter(c => c.scope === currentScope);
+  const commentTree = useMemo(() => buildCommentTree(allComments), [allComments]);
+
+  const isLiked = aggregateScopes
+    ? post.likedBy.some(l => l.userId === currentUserProfile.id)
+    : post.likedBy.some(l => l.userId === currentUserProfile.id && l.scope === currentScope);
+
   const isOwner = post.user.id === currentUserProfile.id;
 
   const COMMENTS_LIMIT = 6;
-  const visibleComments = showAllComments ? scopedComments : scopedComments.slice(0, COMMENTS_LIMIT);
-  const hasMoreComments = scopedComments.length > COMMENTS_LIMIT;
+  const visibleComments = showAllComments ? commentTree : commentTree.slice(0, COMMENTS_LIMIT);
+  const hasMoreComments = commentTree.length > COMMENTS_LIMIT;
 
   const handleSubmitComment = () => {
     if (!commentText.trim()) return;
-    onAddComment(post.id, commentText.trim(), currentScope);
+    const scope = aggregateScopes ? post.visibility === 'public' ? 'public' as InteractionScope : post.visibility === 'friends' ? 'friends' as InteractionScope : 'public' as InteractionScope : currentScope;
+    onAddComment(
+      post.id,
+      commentText.trim(),
+      scope,
+      replyTarget?.userId,
+      replyTarget?.userName,
+      replyTarget?.commentId,
+    );
     setCommentText('');
+    setReplyTarget(null);
     setShowCommentInput(false);
+  };
+
+  const handleReplyTo = (comment: Comment) => {
+    setReplyTarget({ userId: comment.userId || '', userName: comment.user, commentId: comment.id });
+    setShowCommentInput(true);
+    setTimeout(() => commentRef.current?.focus(), 100);
   };
 
   const timeAgo = (ts: number) => {
@@ -87,6 +174,43 @@ export default function MomentItem({
   };
 
   const isCreatedToday = new Date(post.createdAt).toDateString() === new Date().toDateString();
+
+  const renderComment = (c: CommentNode, depth: number = 0) => (
+    <div key={c.id} className={depth > 0 ? 'ml-4 mt-1.5' : ''}>
+      <div
+        className={`flex items-start gap-1.5 group relative ${c.userId === currentUserProfile.id ? 'cursor-pointer' : ''}`}
+        onContextMenu={c.userId === currentUserProfile.id ? e => { e.preventDefault(); setDeleteTarget(prev => prev === c.id ? null : c.id); } : undefined}
+        onClick={() => handleReplyTo(c)}
+      >
+        <span className="text-[#576b95] text-xs font-semibold flex-shrink-0">{c.user}</span>
+        {c.replyToUserName && (
+          <>
+            <span className="text-xs text-neutral-400 flex-shrink-0">回复</span>
+            <span className="text-[#576b95] text-xs font-semibold flex-shrink-0">{c.replyToUserName}</span>
+          </>
+        )}
+        <span className="text-xs text-neutral-400 flex-shrink-0">:</span>
+        <span className="text-xs text-neutral-700 flex-1">{c.text}</span>
+        {aggregateScopes && <ScopeBadge scope={c.scope} />}
+        {deleteTarget === c.id && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDeleteComment(post.id, c.id); setDeleteTarget(null); }}
+            className="absolute right-0 top-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] px-2 py-1 rounded-full"
+          >
+            删除
+          </button>
+        )}
+        {deleteTarget === null && c.userId === currentUserProfile.id && (
+          <span className="text-[10px] text-neutral-300 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-1">长按</span>
+        )}
+      </div>
+      {c.replies.length > 0 && (
+        <div className="flex flex-col gap-1.5 mt-1">
+          {c.replies.map((reply) => renderComment(reply, depth + 1))}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="px-5 py-5 border-b border-neutral-100">
@@ -187,7 +311,7 @@ export default function MomentItem({
         </div>
       )}
 
-      {/* Action bar - 点赞和评论符号放在最上面 */}
+      {/* Action bar */}
       <div className="flex items-center gap-4 mb-3">
         <motion.button
           whileTap={{ scale: 0.85 }}
@@ -206,59 +330,51 @@ export default function MomentItem({
         </motion.button>
 
         <button
-          onClick={() => { setShowCommentInput(v => !v); setTimeout(() => commentRef.current?.focus(), 100); }}
+          onClick={() => { setShowCommentInput(v => !v); setReplyTarget(null); setTimeout(() => commentRef.current?.focus(), 100); }}
           className="flex items-center gap-1.5 text-neutral-400 hover:text-neutral-600"
         >
           <MessageCircle size={18} />
-          {scopedComments.length > 0 && (
-            <span className="text-xs font-semibold">{scopedComments.length}</span>
+          {allComments.length > 0 && (
+            <span className="text-xs font-semibold">{allComments.length}</span>
           )}
         </button>
 
         <div className="flex-1" />
       </div>
 
-      {/* Likes - 谁点了赞放在中间 */}
+      {/* Likes */}
       {scopedLikes.length > 0 && (
         <div className="flex items-start gap-2 py-2 px-3 bg-neutral-50 rounded-xl mb-2">
           <Heart size={13} className="text-red-400 flex-shrink-0 mt-0.5" fill="currentColor" />
-          <p className="text-xs text-[#576b95] leading-relaxed">
-            {scopedLikes.map(l => l.name).join('、')}
-          </p>
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+            {scopedLikes.map(l => (
+              <span key={l.userId} className="inline-flex items-center gap-1">
+                <span className="text-xs text-[#576b95] font-semibold">{l.name}</span>
+                {aggregateScopes && l.scopes.length > 0 && (
+                  <span className="inline-flex gap-0.5">
+                    {l.scopes.map(s => (
+                      <span key={s} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${SCOPE_BADGE_CLASS[s]}`}>
+                        {SCOPE_LABELS[s]}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </span>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Comments - 评论内容放在最后，只显示6条其他折叠 */}
-      {scopedComments.length > 0 && (
+      {/* Comments */}
+      {commentTree.length > 0 && (
         <div className="bg-neutral-50 rounded-xl px-3 py-2 mb-2 flex flex-col gap-1.5">
-          {visibleComments.map(c => (
-            <div
-              key={c.id}
-              className={`flex items-start gap-1.5 group relative ${c.userId === currentUserProfile.id ? 'cursor-pointer' : ''}`}
-              onContextMenu={c.userId === currentUserProfile.id ? e => { e.preventDefault(); setDeleteTarget(prev => prev === c.id ? null : c.id); } : undefined}
-            >
-              <span className="text-[#576b95] text-xs font-semibold flex-shrink-0">{c.user}:</span>
-              <span className="text-xs text-neutral-700 flex-1">{c.text}</span>
-              {deleteTarget === c.id && (
-                <button
-                  onClick={() => { onDeleteComment(post.id, c.id); setDeleteTarget(null); }}
-                  className="absolute right-0 top-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] px-2 py-1 rounded-full"
-                >
-                  删除
-                </button>
-              )}
-              {deleteTarget === null && c.userId === currentUserProfile.id && (
-                <span className="text-[10px] text-neutral-300 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-1">长按</span>
-              )}
-            </div>
-          ))}
-          {/* 展开/折叠按钮 */}
+          {visibleComments.map(c => renderComment(c))}
           {hasMoreComments && (
             <button
               onClick={() => setShowAllComments(!showAllComments)}
               className="text-xs text-[#576b95] py-1 text-left hover:underline"
             >
-              {showAllComments ? '收起' : `展开更多 ${scopedComments.length - COMMENTS_LIMIT} 条评论`}
+              {showAllComments ? '收起' : `展开更多 ${commentTree.length - COMMENTS_LIMIT} 条评论`}
             </button>
           )}
         </div>
@@ -271,26 +387,39 @@ export default function MomentItem({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="mt-3 flex gap-2 overflow-hidden"
+            className="mt-3 flex flex-col gap-2 overflow-hidden"
           >
-            <input
-              ref={commentRef}
-              type="text"
-              value={commentText}
-              onChange={e => setCommentText(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') handleSubmitComment();
-                if (e.key === 'Escape') setShowCommentInput(false);
-              }}
-              placeholder="发表评论..."
-              className="flex-1 bg-neutral-100 rounded-full px-4 py-2 text-sm outline-none"
-            />
-            <button
-              onClick={handleSubmitComment}
-              className="bg-neutral-900 text-white px-4 rounded-full text-xs font-bold"
-            >
-              发送
-            </button>
+            {replyTarget && (
+              <div className="flex items-center gap-2 text-xs text-neutral-400">
+                <span>回复 <span className="text-[#576b95] font-semibold">@{replyTarget.userName}</span></span>
+                <button
+                  onClick={() => setReplyTarget(null)}
+                  className="text-neutral-300 hover:text-neutral-500 text-[10px]"
+                >
+                  取消
+                </button>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                ref={commentRef}
+                type="text"
+                value={commentText}
+                onChange={e => setCommentText(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleSubmitComment();
+                  if (e.key === 'Escape') { setShowCommentInput(false); setReplyTarget(null); }
+                }}
+                placeholder={replyTarget ? `回复 @${replyTarget.userName}...` : '发表评论...'}
+                className="flex-1 bg-neutral-100 rounded-full px-4 py-2 text-sm outline-none"
+              />
+              <button
+                onClick={handleSubmitComment}
+                className="bg-neutral-900 text-white px-4 rounded-full text-xs font-bold"
+              >
+                发送
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

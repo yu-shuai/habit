@@ -49,6 +49,9 @@ export interface Comment {
   text: string;
   createdAt: number;
   scope: InteractionScope;
+  replyToUserId?: string;
+  replyToUserName?: string;
+  replyToCommentId?: string;
 }
 
 export interface Post {
@@ -71,4 +74,34 @@ export interface Follow {
   followerId: string;
   followingId: string;
   createdAt: number;
+}
+
+export type NotificationType = 'like' | 'comment' | 'reply' | 'friend_request' | 'friend_accept' | 'follow' | 'mention' | 'system';
+
+export interface AppNotification {
+  id: string;
+  userId: string;
+  actorId: string;
+  actorName: string;
+  actorAvatar: string;
+  type: NotificationType;
+  postId?: string;
+  commentId?: string;
+  content: string;
+  postContentPreview?: string;
+  postType?: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface NotificationPreferences {
+  like: { inApp: boolean; sound: boolean; vibration: boolean };
+  comment: { inApp: boolean; sound: boolean; vibration: boolean };
+  reply: { inApp: boolean; sound: boolean; vibration: boolean };
+  friend_request: { inApp: boolean; sound: boolean; vibration: boolean };
+  friend_accept: { inApp: boolean; sound: boolean; vibration: boolean };
+  follow: { inApp: boolean; sound: boolean; vibration: boolean };
+  mention: { inApp: boolean; sound: boolean; vibration: boolean };
+  system: { inApp: boolean; sound: boolean; vibration: boolean };
+  soundType: 'default' | 'gentle' | 'crystal' | 'bubble';
 }

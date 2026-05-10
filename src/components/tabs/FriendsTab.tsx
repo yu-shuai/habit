@@ -10,7 +10,7 @@ interface FriendsTabProps {
   friendSubTab: FriendSubTab;
   setFriendSubTab: (tab: FriendSubTab) => void;
   handleLike: (id: string, scope?: InteractionScope) => void;
-  handleAddComment: (postId: string, text: string, scope?: InteractionScope) => void;
+  handleAddComment: (postId: string, text: string, scope?: InteractionScope, replyToUserId?: string, replyToUserName?: string, replyToCommentId?: string) => void;
   handleDeleteComment: (postId: string, commentId: string) => void;
   handleChangeVisibility: (postId: string, visibility: Visibility) => void;
   handleDeletePost?: (postId: string) => void;

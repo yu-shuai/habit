@@ -97,12 +97,12 @@ interface MeTabProps {
 }
 
 const badgeIconForDays = (days: number) => {
-  if (days <= 7) return 'local_fire_department';
-  if (days <= 30) return 'verified_user';
-  if (days <= 90) return 'stars';
-  if (days <= 180) return 'diamond';
-  if (days <= 365) return 'celebration';
-  return 'emoji_events';
+  if (days <= 7) return '🔥';
+  if (days <= 30) return '⭐';
+  if (days <= 90) return '💎';
+  if (days <= 180) return '🌙';
+  if (days <= 365) return '👑';
+  return '🏆';
 };
 
 export default function MeTab({
@@ -238,7 +238,7 @@ export default function MeTab({
                 className="aspect-square bg-white rounded-2xl flex flex-col items-center justify-center gap-2 shadow-sm border border-neutral-100 relative"
               >
                 <div className={`w-14 h-14 rounded-full bg-neutral-50 flex items-center justify-center shadow-inner ${!isUnlocked ? 'grayscale opacity-40' : ''}`}>
-                  <span className="material-symbols-rounded text-3xl text-black" style={{ fontVariationSettings: "'FILL' 1" }}>
+                  <span className="text-3xl">
                     {badgeIconForDays(days)}
                   </span>
                   {!isUnlocked && (

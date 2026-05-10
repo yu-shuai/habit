@@ -7,7 +7,7 @@ interface UseHabitsDataParams {
   userId: string | undefined;
   setTasks: (tasks: Habit[]) => void;
   setCompletedTasks: (tasks: Habit[]) => void;
-  setActivities: (activities: Post[]) => void;
+  setActivities: (activities: Post[] | ((prev: Post[]) => Post[])) => void;
   setFetchStatus?: (status: string) => void;
 }
 
@@ -70,12 +70,11 @@ export const useHabitsData = ({
       setFetchStatus?.('fetching...');
 
       // 1. Get own activities (limit 50 for performance if offset > 0)
-      const lightCols = 'id,habit_id,user_id,user,images,tag,liked_by,comments,visibility,content,created_at';
+      const lightCols = 'id,habit_id,user_id,user,images,tag,liked_by,comments,visibility,content,created_at,type';
       
       const { data: rawData, error } = await supabase
         .from('activities')
         .select(lightCols)
-        .or(`visibility.eq.public,user_id.eq.${userId}`)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
 
@@ -100,7 +99,7 @@ export const useHabitsData = ({
           visibility: String(a.visibility || 'public').trim().toLowerCase() as Visibility,
           content: a.content || '',
           createdAt: isNaN(ts) ? Date.now() : ts,
-          type: undefined,
+          type: a.type || undefined,
         };
       });
 

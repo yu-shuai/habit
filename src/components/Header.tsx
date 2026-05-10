@@ -1,6 +1,7 @@
 import { motion } from 'motion/react';
 import { Search, Plus, Settings } from 'lucide-react';
 import { Tab } from '../types';
+import { useAppStore } from '../store/useAppStore';
 
 interface HeaderProps {
   isDark: boolean;
@@ -21,6 +22,8 @@ export default function Header({
   setIsSearching,
   setIsSettingsOpen,
 }: HeaderProps) {
+  const { appUpdate } = useAppStore();
+
   const getHeaderRightIcon = () => {
     switch (activeTab) {
       case 'home':
@@ -29,7 +32,14 @@ export default function Header({
       case 'tasks':
         return <Plus size={24} strokeWidth={3} />;
       case 'me':
-        return <Settings size={22} strokeWidth={2.5} onClick={() => setIsSettingsOpen(true)} />;
+        return (
+          <div className="relative">
+            <Settings size={22} strokeWidth={2.5} onClick={() => setIsSettingsOpen(true)} />
+            {appUpdate && (
+              <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-black"></span>
+            )}
+          </div>
+        );
     }
   };
 

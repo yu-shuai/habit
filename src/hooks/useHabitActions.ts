@@ -28,6 +28,7 @@ interface UseHabitActionsParams {
   setShowFireworks: (show: boolean) => void;
   showToast: (message: string) => void;
   setHabitLogs: (updater: (prev: any[]) => any[]) => void;
+  createNotification?: (targetUserId: string, type: any, postId?: string, commentId?: string, content?: string, postContentPreview?: string, postType?: string) => Promise<void>;
 }
 
 
@@ -57,6 +58,7 @@ export const useHabitActions = ({
   setShowFireworks,
   showToast,
   setHabitLogs,
+  createNotification,
 }: UseHabitActionsParams) => {
 
   /** ─── 检查每个任务是否断签，更新惩罚/失败状态 ─── */
@@ -379,6 +381,13 @@ export const useHabitActions = ({
       setTasks(prev => prev.map(t => t.id === habitId ? { ...t, voteStatus: updated } : t));
       await supabase.from('habits').update({ vote_status: updated }).eq('id', habitId);
       showToast(`已发起加码投票：${proposedDays} 天（24小时内需全员同意）`);
+      
+      // 通知所有成员（队长除外）
+      (habit.members || []).forEach(m => {
+        if (m.id !== userId) {
+          createNotification?.(m.id, 'system', undefined, undefined, `队长对「${habit.name}」发起了加码投票：新目标 ${proposedDays} 天`);
+        }
+      });
       return;
     }
 
@@ -411,6 +420,11 @@ export const useHabitActions = ({
     setTasks(prev => prev.map(t => t.id === habitId ? { ...t, voteStatus: updatedVotes } : t));
     await supabase.from('habits').update({ vote_status: updatedVotes }).eq('id', habitId);
 
+    // 通知队长有新投票
+    if (habit.creatorId && habit.creatorId !== userId) {
+      createNotification?.(habit.creatorId, 'system', undefined, undefined, `队员 ${userProfile.name} 已同意「${habit.name}」的加码申请`);
+    }
+
     const hasVeto = updatedVotes.some(v => v.choice === 'cashout');
     const allMembersVoted = updatedVotes.length >= memberCount; // includes captain proposal
     const allContinue = allMembersVoted && !hasVeto && updatedVotes.every(v => v.choice === 'continue');
@@ -425,6 +439,11 @@ export const useHabitActions = ({
         vote_status: [],
       }).eq('id', habitId);
       showToast(`全员同意：进入加码延期（${nextGoal} 天）`);
+      
+      // 通知全员任务已延续
+      (habit.members || []).forEach(m => {
+        createNotification?.(m.id, 'system', undefined, undefined, `「${habit.name}」已全员同意加码，新挑战开始！`);
+      });
     } else {
       showToast('已投票');
     }
@@ -581,7 +600,11 @@ export const useHabitActions = ({
     }
     setJoinCode('');
     showToast('成功加入团队');
-  }, [joinCode, tasks, userProfile, setTasks, setJoinCode, showToast]);
+    // 通知队长
+    if (teamTask.creatorId) {
+      createNotification?.(teamTask.creatorId, 'system', undefined, undefined, `${userProfile.name} 加入了你的团队「${teamTask.name}」`);
+    }
+  }, [joinCode, tasks, userProfile, setTasks, setJoinCode, showToast, createNotification]);
 
   /** ─── 开始团队挑战（锁死） ─── */
   const handleStartTeam = useCallback(async (teamId: string) => {
@@ -597,13 +620,32 @@ export const useHabitActions = ({
       return;
     }
     showToast('🚀 挑战已开始，同生共死！');
-  }, [setTasks, showToast]);
+    // 通知所有成员
+    const habit = tasks.find(t => t.id === teamId);
+    if (habit) {
+      (habit.members || []).forEach(m => {
+        if (m.id !== session?.user?.id) {
+          createNotification?.(m.id, 'system', undefined, undefined, `「${habit.name}」挑战已开始，快去打卡吧！`);
+        }
+      });
+    }
+  }, [setTasks, showToast, tasks, session, createNotification]);
 
-  /** ─── 踢人（仅开始前） ─── */
+  /** ─── 踢人或自己退出（仅开始前） ─── */
   const handleKickMember = useCallback(async (teamId: string, memberId: string) => {
     const habit = tasks.find(t => t.id === teamId);
     if (!habit) return;
     const updatedMembers = habit.members?.filter(m => m.id !== memberId) || [];
+    
+    if (updatedMembers.length === 0) {
+      // 团队空无一人，自动解散
+      setTasks(prev => prev.filter(t => t.id !== teamId));
+      await supabase.from('habits').delete().eq('id', teamId);
+      await supabase.from('activities').delete().eq('habit_id', teamId);
+      showToast('团队已自动解散');
+      return;
+    }
+
     setTasks(prev => prev.map(t => t.id === teamId ? { ...t, members: updatedMembers } : t));
     const { error } = await supabase.from('habits').update({ members: updatedMembers }).eq('id', teamId);
     if (error) {
@@ -612,7 +654,11 @@ export const useHabitActions = ({
       return;
     }
     showToast('成员已移除');
-  }, [tasks, setTasks, showToast]);
+    // 通知被踢成员 (如果是自己退出则不通知自己)
+    if (memberId !== session?.user?.id) {
+      createNotification?.(memberId, 'system', undefined, undefined, `你已被移出团队「${habit.name}」`);
+    }
+  }, [tasks, setTasks, showToast, createNotification, session?.user?.id]);
 
   /** ─── 领取已完成任务的奖励 ─── */
   const handleClaimReward = useCallback(async (habit: Habit) => {

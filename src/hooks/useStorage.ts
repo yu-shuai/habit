@@ -59,6 +59,22 @@ export const useStorage = () => {
     return uploadFile('habit', filePath, file);
   }, [uploadFile]);
 
+  /**
+   * 删除单个文件
+   */
+  const deleteFile = useCallback(async (bucket: string, path: string) => {
+    const { error } = await supabase.storage.from(bucket).remove([path]);
+    if (error) console.error('Storage delete error:', error.message);
+  }, []);
 
-  return { uploadFile, uploadAvatar, uploadPostImage };
+  /**
+   * 删除多个文件
+   */
+  const deleteFiles = useCallback(async (bucket: string, paths: string[]) => {
+    if (paths.length === 0) return;
+    const { error } = await supabase.storage.from(bucket).remove(paths);
+    if (error) console.error('Storage delete error:', error.message);
+  }, []);
+
+  return { uploadFile, uploadAvatar, uploadPostImage, deleteFile, deleteFiles };
 };

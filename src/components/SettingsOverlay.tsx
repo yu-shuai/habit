@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Bell, ChevronRight, FileText, Flame, Headphones, Info, Lock,
-  Palette, Shield, ShieldCheck, Smile, Trash2, LogOut,
+  Palette, Shield, ShieldCheck, Smile, Trash2, LogOut, Download,
 } from 'lucide-react';
 import SettingsItem from './SettingsItem';
 import SettingsSubPages from './settings/SettingsSubPages';
@@ -9,6 +9,7 @@ import SettingsSheets from './settings/SettingsSheets';
 import SettingsModals from './settings/SettingsModals';
 import { APPEARANCE_OPTIONS, VISIBILITY_OPTIONS } from '../constants/app';
 import { SETTINGS_KEYS } from '../hooks/useAppState';
+import { useAppStore } from '../store/useAppStore';
 
 const BACKGROUND_PRESETS = [
   { name: '默认', color: '#ffffff' },
@@ -83,6 +84,8 @@ export default function SettingsOverlay({
   isVisibilitySheetOpen, setIsVisibilitySheetOpen,
   onLogout, onDeleteAccount,
 }: SettingsOverlayProps) {
+  const { appUpdate, currentAppInfo } = useAppStore();
+
   const settingsTitle =
     settingsCategory === 'root' ? '设置'
       : settingsCategory === 'background' ? '背景设置'
@@ -186,7 +189,12 @@ export default function SettingsOverlay({
                     <div className="bg-white rounded-[2rem] p-2 border border-neutral-100 shadow-sm flex flex-col gap-2">
                       <SettingsItem icon={<Headphones size={20} />} label="意见反馈" onClick={() => setActiveSubPage('feedback')} />
                       <SettingsItem icon={<Smile size={20} />} label="加入官方社群" onClick={() => showToast('敬请期待')} />
-                      <SettingsItem icon={<Info size={20} />} label="关于 Habit" onClick={() => setSettingsCategory('about')} />
+                      <SettingsItem 
+                        icon={<Info size={20} />} 
+                        label="关于 Habit" 
+                        value={appUpdate ? <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span><span className="text-red-500 font-bold">新版本</span></span> : null}
+                        onClick={() => setSettingsCategory('about')} 
+                      />
                     </div>
                   </div>
 
@@ -231,15 +239,33 @@ export default function SettingsOverlay({
               {settingsCategory === 'about' && (
                 <div className="px-6 py-8 flex flex-col gap-10">
                   <div className="flex flex-col items-center gap-4 py-10">
-                    <div className="w-20 h-20 bg-black rounded-[2.5rem] flex items-center justify-center shadow-2xl">
-                      <Flame size={40} className="text-white fill-white" />
+                    <div className="w-20 h-20 bg-white rounded-[2.5rem] flex items-center justify-center shadow-2xl overflow-hidden border border-neutral-100">
+                      <img src="/icon.png" alt="App Icon" className="w-full h-full object-cover" />
                     </div>
                     <div className="text-center">
                       <h3 className="font-headline font-black text-2xl italic uppercase tracking-tighter">Habit</h3>
-                      <p className="text-[10px] font-black text-neutral-400 uppercase tracking-[0.3em] mt-1">Version 1.0.4 (Build 2026)</p>
+                      {currentAppInfo && (
+                        <p className="text-[10px] font-black text-neutral-400 uppercase tracking-[0.3em] mt-1">
+                          Current: {currentAppInfo.version} (Build {currentAppInfo.build})
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="bg-white rounded-[2rem] overflow-hidden border border-neutral-100 shadow-sm divide-y divide-neutral-50">
+                    <SettingsItem 
+                      icon={<Download size={20} />} 
+                      label="检查更新" 
+                      value={appUpdate ? <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span><span className="text-red-500 font-bold">发现新版 {appUpdate.version}</span></span> : '已是最新版'}
+                      onClick={() => {
+                        if (appUpdate) {
+                          if (confirm(`发现新版本 ${appUpdate.version}\n\n更新内容:\n${appUpdate.release_notes || '修复已知问题，提升稳定性。'}\n\n是否立即下载更新？`)) {
+                            window.open(appUpdate.download_url, '_system');
+                          }
+                        } else {
+                          showToast('当前已是最新版本');
+                        }
+                      }} 
+                    />
                     <SettingsItem icon={<FileText size={20} />} label="用户协议" onClick={() => showToast('敬请期待')} />
                     <SettingsItem icon={<ShieldCheck size={20} />} label="隐私政策" onClick={() => showToast('敬请期待')} />
                     <SettingsItem icon={<Info size={20} />} label="官方网站" onClick={() => showToast('敬请期待')} />

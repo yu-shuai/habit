@@ -14,6 +14,8 @@ interface UseUserActionsParams {
   newPassInput: string;
   showToast: (message: string) => void;
   setActivities?: (updater: (prev: Post[]) => Post[]) => void;
+  deleteFile?: (bucket: string, path: string) => Promise<void>;
+  deleteFiles?: (bucket: string, paths: string[]) => Promise<void>;
 }
 
 export const useUserActions = ({
@@ -28,6 +30,8 @@ export const useUserActions = ({
   newPassInput,
   showToast,
   setActivities,
+  deleteFile,
+  deleteFiles,
 }: UseUserActionsParams) => {
   /** Fetch current user profile */
   const fetchProfile = useCallback(async () => {
@@ -77,7 +81,7 @@ export const useUserActions = ({
       const { error } = await supabase.from('profiles').update(dbUpdates).eq('id', session.user.id);
       if (error) { showToast('更新失败，请重试'); return; }
       setUserProfile(prev => ({ ...prev, ...updates }));
-      // #7: Sync both name and avatar to existing activities
+      // #7: Sync both name and avatar to existing activities (Local state)
       if (setActivities && (updates.name !== undefined || updates.avatar !== undefined)) {
         setActivities(prev => prev.map(post =>
           post.user.id === session.user.id
@@ -92,8 +96,22 @@ export const useUserActions = ({
             : post
         ));
       }
+
+      // Sync to Database activities table (Optimized)
+      if (updates.name !== undefined || updates.avatar !== undefined) {
+        const newUser = {
+          id: session.user.id,
+          name: updates.name !== undefined ? updates.name.trim() : userProfile.name,
+          avatar: updates.avatar !== undefined ? updates.avatar : userProfile.avatar,
+        };
+        
+        await supabase
+          .from('activities')
+          .update({ user: newUser })
+          .eq('user_id', session.user.id);
+      }
     },
-    [session, setUserProfile, setActivities, showToast]
+    [session, userProfile, setUserProfile, setActivities, showToast]
   );
 
   /** Update custom ID */
@@ -130,6 +148,46 @@ export const useUserActions = ({
    * supabase.auth.admin.deleteUser(userId). */
   const handleDeleteAccount = useCallback(async () => {
     if (!session?.user?.id) return;
+    
+    // Find all user's activities to delete their images
+    if (deleteFiles) {
+      const { data: userActivities } = await supabase
+        .from('activities')
+        .select('images')
+        .eq('user_id', session.user.id);
+        
+      if (userActivities) {
+        const pathsToDelete: string[] = [];
+        userActivities.forEach(a => {
+          if (a.images && a.images.length > 0) {
+            a.images.forEach((url: string) => {
+              try {
+                const urlObj = new URL(url);
+                if (urlObj.hostname.includes('supabase.co')) {
+                  const pathParts = urlObj.pathname.split('/public/habit/');
+                  if (pathParts.length > 1) pathsToDelete.push(pathParts[1]);
+                }
+              } catch (e) {}
+            });
+          }
+        });
+        if (pathsToDelete.length > 0) {
+          await deleteFiles('habit', pathsToDelete);
+        }
+      }
+    }
+
+    // Delete avatar
+    if (userProfile.avatar && deleteFile) {
+      try {
+        const urlObj = new URL(userProfile.avatar);
+        if (urlObj.hostname.includes('supabase.co')) {
+          const pathParts = urlObj.pathname.split('/public/habit/');
+          if (pathParts.length > 1) await deleteFile('habit', pathParts[1]);
+        }
+      } catch (e) {}
+    }
+
     // Delete user data from all public tables
     await supabase.from('activities').delete().eq('user_id', session.user.id);
     await supabase.from('habits').delete().eq('user_id', session.user.id);
@@ -139,7 +197,7 @@ export const useUserActions = ({
     await supabase.auth.signOut();
     setIsSettingsOpen(false);
     showToast('账号已注销');
-  }, [session, setIsSettingsOpen, showToast]);
+  }, [session, userProfile.avatar, setIsSettingsOpen, showToast, deleteFile, deleteFiles]);
 
   /** Change password */
   const handlePasswordSubmit = useCallback(async () => {

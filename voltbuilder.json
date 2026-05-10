@@ -1,0 +1,13 @@
+{
+  "appName": "Habit",
+  "appId": "com.ycy.habit",
+  "webDir": "dist",
+  "iosPackageType": "ad-hoc",
+  "iosDistribution": "development",
+  "iosDevP12": "",
+  "iosDevP12Password": "",
+  "iosDevelopment": "",
+  "iosDistP12": "",
+  "iosDistP12Password": "",
+  "iosDistribution": ""
+}

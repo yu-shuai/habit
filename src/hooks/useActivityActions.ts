@@ -22,6 +22,8 @@ interface UseActivityActionsParams {
   handleCheck: (id: string, skipAutoPost?: boolean) => void;
   showToast: (message: string) => void;
   uploadPostImage?: (userId: string, file: File | Blob) => Promise<string | null>;
+  deleteFiles?: (bucket: string, paths: string[]) => Promise<void>;
+  createNotification?: (targetUserId: string, type: 'like' | 'comment' | 'reply' | 'friend_request' | 'friend_accept' | 'follow' | 'mention', postId?: string, commentId?: string, content?: string, postContentPreview?: string, postType?: string) => Promise<void>;
 }
 
 export const useActivityActions = ({
@@ -40,9 +42,8 @@ export const useActivityActions = ({
   setCheckInHabitId,
   setCheckInImages,
   setEditingPostId,
-  handleCheck,
-  showToast,
-  uploadPostImage,
+  handleCheck, showToast, uploadPostImage, deleteFiles,
+  createNotification,
 }: UseActivityActionsParams) => {
   /** Like / unlike a post */
   const handleLike = useCallback(
@@ -74,54 +75,40 @@ export const useActivityActions = ({
         prev.map(a => (a.id === postId ? { ...a, likedBy: optimisticLikedBy } : a))
       );
 
-      // Fetch latest from DB to avoid overwriting other users' concurrent likes
-      const { data: latest } = await supabase
-        .from('activities')
-        .select('liked_by')
-        .eq('id', postId)
-        .single();
-
-      const dbLikedBy: any[] = latest?.liked_by || [];
-      let newLikedBy;
+      let rpcError = null;
       if (alreadyLiked) {
-        newLikedBy = dbLikedBy.filter(
-          (l: any) => !(l.userId === session.user.id && l.scope === currentScope)
-        );
+        const { error } = await supabase.rpc('remove_like', {
+          p_activity_id: postId,
+          p_user_id: session.user.id
+        });
+        rpcError = error;
       } else {
-        // Remove any existing entry first (in case of duplicates), then add
-        newLikedBy = [
-          ...dbLikedBy.filter(
-            (l: any) => !(l.userId === session.user.id && l.scope === currentScope)
-          ),
-          { name: userProfile.name, userId: session.user.id, scope: currentScope },
-        ];
+        const { error } = await supabase.rpc('add_like', {
+          p_activity_id: postId,
+          p_like_obj: { name: userProfile.name, userId: session.user.id, scope: currentScope }
+        });
+        rpcError = error;
       }
 
-      const { error } = await supabase
-        .from('activities')
-        .update({ liked_by: newLikedBy })
-        .eq('id', postId);
-
-      if (error) {
-        console.error('handleLike failed:', error.message);
-        // Rollback optimistic update
+      if (rpcError) {
+        console.error('handleLike failed:', rpcError.message);
         setActivities(prev =>
           prev.map(a => (a.id === postId ? { ...a, likedBy: previousLikedBy } : a))
         );
         showToast('点赞失败，请重试');
       } else {
-        // Sync local state with what was actually written
-        setActivities(prev =>
-          prev.map(a => (a.id === postId ? { ...a, likedBy: newLikedBy } : a))
-        );
+        if (!alreadyLiked && post.user.id !== session.user.id) {
+          const preview = post.content ? (post.content.length > 30 ? post.content.slice(0, 30) + '...' : post.content) : (post.tag || '');
+          createNotification?.(post.user.id, 'like', postId, undefined, undefined, preview, post.type);
+        }
       }
     },
-    [session, userProfile, activities, setActivities, showToast]
+    [session, userProfile, activities, setActivities, showToast, createNotification]
   );
 
   /** Add a comment */
   const handleAddComment = useCallback(
-    async (postId: string, text: string, scope?: InteractionScope) => {
+    async (postId: string, text: string, scope?: InteractionScope, replyToUserId?: string, replyToUserName?: string, replyToCommentId?: string) => {
       if (!text.trim()) return;
       const newComment = {
         id: `c-${Date.now()}`,
@@ -130,6 +117,7 @@ export const useActivityActions = ({
         text: text.trim(),
         createdAt: Date.now(),
         scope: scope || 'public',
+        ...(replyToUserId ? { replyToUserId, replyToUserName, replyToCommentId } : {}),
       };
 
       const post = activities.find(a => a.id === postId);
@@ -142,20 +130,10 @@ export const useActivityActions = ({
         prev.map(a => (a.id === postId ? { ...a, comments: optimisticComments } : a))
       );
 
-      // Fetch latest comments from DB to avoid overwriting other users' concurrent comments
-      const { data: latest } = await supabase
-        .from('activities')
-        .select('comments')
-        .eq('id', postId)
-        .single();
-
-      const dbComments: any[] = latest?.comments || [];
-      const mergedComments = [...dbComments, newComment];
-
-      const { error } = await supabase
-        .from('activities')
-        .update({ comments: mergedComments })
-        .eq('id', postId);
+      const { error } = await supabase.rpc('add_comment', {
+        p_activity_id: postId,
+        p_comment_obj: newComment
+      });
 
       if (error) {
         console.error('handleAddComment failed:', error.message);
@@ -164,13 +142,18 @@ export const useActivityActions = ({
         );
         showToast('评论失败，请重试');
       } else {
-        // Sync local with actual DB state
-        setActivities(prev =>
-          prev.map(a => (a.id === postId ? { ...a, comments: mergedComments } : a))
-        );
+        const updatedPost = activities.find(a => a.id === postId);
+        if (updatedPost && session?.user?.id) {
+          const preview = updatedPost.content ? (updatedPost.content.length > 30 ? updatedPost.content.slice(0, 30) + '...' : updatedPost.content) : (updatedPost.tag || '');
+          if (replyToUserId && replyToUserId !== session.user.id) {
+            createNotification?.(replyToUserId, 'reply', postId, newComment.id, text.trim(), preview, updatedPost.type);
+          } else if (updatedPost.user.id !== session.user.id) {
+            createNotification?.(updatedPost.user.id, 'comment', postId, newComment.id, text.trim(), preview, updatedPost.type);
+          }
+        }
       }
     },
-    [session, userProfile, activities, setActivities, showToast]
+    [session, userProfile, activities, setActivities, showToast, createNotification]
   );
 
   /** Delete a comment */
@@ -185,20 +168,10 @@ export const useActivityActions = ({
         prev.map(a => (a.id === postId ? { ...a, comments: optimisticComments } : a))
       );
 
-      // Fetch latest from DB, then remove the target comment
-      const { data: latest } = await supabase
-        .from('activities')
-        .select('comments')
-        .eq('id', postId)
-        .single();
-
-      const dbComments: any[] = latest?.comments || [];
-      const newComments = dbComments.filter((c: any) => c.id !== commentId);
-
-      const { error } = await supabase
-        .from('activities')
-        .update({ comments: newComments })
-        .eq('id', postId);
+      const { error } = await supabase.rpc('remove_comment', {
+        p_activity_id: postId,
+        p_comment_id: commentId
+      });
 
       if (error) {
         console.error('handleDeleteComment failed:', error.message);
@@ -206,10 +179,6 @@ export const useActivityActions = ({
           prev.map(a => (a.id === postId ? { ...a, comments: previousComments } : a))
         );
         showToast('删除评论失败，请重试');
-      } else {
-        setActivities(prev =>
-          prev.map(a => (a.id === postId ? { ...a, comments: newComments } : a))
-        );
       }
     },
     [activities, setActivities, showToast]
@@ -378,10 +347,28 @@ export const useActivityActions = ({
         setActivities(prev => [post, ...prev]);
         showToast('删除失败，请重试');
       } else {
+        // Delete associated images from storage
+        if (post.images && post.images.length > 0 && deleteFiles) {
+          try {
+            // Extract file paths from public URLs
+            // Example URL: https://[project].supabase.co/storage/v1/object/public/habit/userid/posts/123-abc.png
+            const pathsToDelete = post.images.map(url => {
+              const urlObj = new URL(url);
+              const pathParts = urlObj.pathname.split('/public/habit/');
+              return pathParts.length > 1 ? pathParts[1] : null;
+            }).filter(Boolean) as string[];
+
+            if (pathsToDelete.length > 0) {
+              await deleteFiles('habit', pathsToDelete);
+            }
+          } catch (e) {
+            console.error('Failed to parse image URLs for deletion:', e);
+          }
+        }
         showToast('动态已删除');
       }
     },
-    [session, activities, setActivities, showToast]
+    [session, activities, setActivities, showToast, deleteFiles]
   );
 
   return {

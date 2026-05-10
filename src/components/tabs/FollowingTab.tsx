@@ -6,7 +6,7 @@ interface FollowingTabProps {
   followings: string[];
   userProfile: UserProfile;
   onLike: (id: string, scope?: InteractionScope) => void;
-  onAddComment: (postId: string, text: string, scope?: InteractionScope) => void;
+  onAddComment: (postId: string, text: string, scope?: InteractionScope, replyToUserId?: string, replyToUserName?: string, replyToCommentId?: string) => void;
   onDeleteComment: (postId: string, commentId: string) => void;
   onChangeVisibility: (postId: string, visibility: Visibility) => void;
   onDeletePost?: (postId: string) => void;

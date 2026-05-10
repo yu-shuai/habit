@@ -7,6 +7,7 @@ interface UseFollowActionsParams {
   setFollowings: (updater: (prev: string[]) => string[]) => void;
   setFollowers: (followers: any[]) => void;
   showToast: (message: string) => void;
+  createNotification?: (targetUserId: string, type: any) => Promise<void>;
 }
 
 export const useFollowActions = ({
@@ -15,6 +16,7 @@ export const useFollowActions = ({
   setFollowings,
   setFollowers,
   showToast,
+  createNotification,
 }: UseFollowActionsParams) => {
   /** Fetch all users the current user follows */
   const fetchFollowings = useCallback(async () => {
@@ -78,9 +80,10 @@ export const useFollowActions = ({
         });
         setFollowings(prev => [...prev, userId]);
         showToast('已关注');
+        createNotification?.(userId, 'follow');
       }
     },
-    [session, followings, setFollowings, showToast]
+    [session, followings, setFollowings, showToast, createNotification]
   );
 
   return { fetchFollowings, fetchFollowers, handleFollow, isFollowing };

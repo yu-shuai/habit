@@ -11,6 +11,7 @@ interface UseFriendActionsParams {
   setSearchQuery: (query: string) => void;
   setIsSearching: (searching: boolean) => void;
   showToast: (message: string) => void;
+  createNotification?: (targetUserId: string, type: any, postId?: string, commentId?: string, content?: string, postContentPreview?: string, postType?: string) => Promise<void>;
 }
 
 export const useFriendActions = ({
@@ -22,6 +23,7 @@ export const useFriendActions = ({
   setSearchQuery,
   setIsSearching,
   showToast,
+  createNotification,
 }: UseFriendActionsParams) => {
   const fetchFriendRequests = useCallback(async () => {
     if (!session?.user?.id) return;
@@ -135,21 +137,41 @@ export const useFriendActions = ({
         message: message?.trim() || null,
       });
       if (error) showToast('发送失败，请重试');
-      else showToast('好友申请发送成功');
+      else {
+        showToast('好友申请发送成功');
+        createNotification?.(receiverId, 'friend_request', undefined, undefined, message);
+      }
     },
-    [session, showToast]
+    [session, showToast, createNotification]
   );
 
   const handleAcceptFriendRequest = useCallback(
     async (requestId: string) => {
-      await supabase
+      // 先获取请求信息，以便知道要通知谁
+      const { data: request } = await supabase
+        .from('friendships')
+        .select('requester_id')
+        .eq('id', requestId)
+        .single();
+
+      const { error } = await supabase
         .from('friendships')
         .update({ status: 'accepted', updated_at: new Date().toISOString() })
         .eq('id', requestId);
+
+      if (error) {
+        showToast('操作失败，请重试');
+        return;
+      }
+
       setFriendRequests(prev => prev.filter(r => r.id !== requestId));
       showToast('已同意好友请求');
+
+      if (request?.requester_id) {
+        createNotification?.(request.requester_id, 'friend_accept');
+      }
     },
-    [setFriendRequests, showToast]
+    [setFriendRequests, showToast, createNotification]
   );
 
   const handleRejectFriendRequest = useCallback(

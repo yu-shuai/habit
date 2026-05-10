@@ -26,8 +26,11 @@ interface AppState {
   // UI State
   activeTab: 'home' | 'friends' | 'tasks' | 'me';
   setActiveTab: (tab: 'home' | 'friends' | 'tasks' | 'me') => void;
-  toast: string | null;
-  setToast: (message: string | null) => void;
+  // App Update
+  appUpdate: { version: string; build_number: number; release_notes: string; download_url: string; is_mandatory: boolean } | null;
+  setAppUpdate: (update: any | null) => void;
+  currentAppInfo: { version: string; build: string } | null;
+  setCurrentAppInfo: (info: any | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -65,5 +68,10 @@ export const useAppStore = create<AppState>((set) => ({
   setActiveTab: (activeTab) => set({ activeTab }),
   toast: null,
   setToast: (toast) => set({ toast }),
+  
+  // App Update initial
+  appUpdate: null,
+  setAppUpdate: (appUpdate) => set({ appUpdate }),
+  currentAppInfo: null,
+  setCurrentAppInfo: (currentAppInfo) => set({ currentAppInfo }),
 }));
-
