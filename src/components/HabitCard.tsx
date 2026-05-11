@@ -73,7 +73,7 @@ export default function HabitCard({
             ? 'bg-white/10 opacity-40 cursor-not-allowed'
             : 'bg-white/10 hover:bg-white/20';
 
-  const canCheck = !isFailed && !isCaptainDeleted && !(isTeam && !habit.isStarted) && !habit.isCompletedToday;
+  const canCheck = !isFailed && !isCaptainDeleted && !(isTeam && !habit.isStarted) && (isCompleted || !habit.isCompletedToday);
   const primaryActionLabel = isCompleted ? '结算/领取' : (habit.isCompletedToday ? '已打卡' : '打卡');
 
   const [isExpanded, setIsExpanded] = useState(false);
