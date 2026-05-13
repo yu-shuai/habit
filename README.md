@@ -1101,14 +1101,4 @@ base: './'
 - `app_releases` 表缺少 `build_number` 等字段。
 - RLS 没有允许客户端读取最新发布记录。
 
-## 维护建议
 
-当前项目功能已经比较完整，但有几个后续值得优先整理的点：
-
-- 补齐并版本化完整 Supabase migration，而不是只维护部分 `supabase_schema.sql`。
-- 更新 `.env.example`，移除无关 Gemini 模板，加入 Supabase 必需变量。
-- 将 `useAppState` 拆分为更细的业务状态模块。
-- 将团队成员从 `habits.members` JSONB 逐步迁移到关系表，便于查询和权限控制。
-- 将断签检查、团队投票超时检查迁移到服务端定时任务。
-- 为 RPC、RLS、Storage policy 增加部署说明和测试脚本。
-- 为核心 Hook 增加单元测试或集成测试，尤其是打卡、结算、团队投票、点赞评论。
